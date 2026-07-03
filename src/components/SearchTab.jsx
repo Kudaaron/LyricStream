@@ -1,0 +1,119 @@
+import SearchBar from './SearchBar';
+import LyricsPanel from './LyricsPanel';
+import PlayerCard from './PlayerCard';
+import SongCard from './SongCard';
+import SongPicker from './SongPicker';
+import { getAllSongs } from '../data/songs';
+
+export default function SearchTab({
+  player, loading, loadingMsg, onSearch, onArtistSearch,
+  pickerResults, pickerQuery, onPickSong, onCancelPicker, onBackToResults,
+  isFav, onToggleFav, onCopy, onOpenSpotify,
+  favorites,
+}) {
+  const {
+    song, isPlaying, currentSec, duration, progress,
+    activeLyricIdx, introSecsRemaining,
+    togglePlay, seekTo, seekByPercent, restart, skipForward,
+    speed, setSpeed, volume, setVolume,
+    mode, videoId, loading: playerLoading,
+    lyricOffset, setLyricOffset,
+    onYTReady, onYTTimeUpdate, onYTStateChange,
+    manualSetVideoId, loadSong,
+  } = player;
+
+  const favSongs = getAllSongs().filter(s => favorites.includes(s.title));
+
+  return (
+    <div>
+      {/* Hero */}
+      <div className="search-hero">
+        <h1 className="hero-title">Find lyrics for any song</h1>
+        <p className="hero-sub">Powered by LRCLIB </p>
+        <SearchBar onSearch={onSearch} onArtistSearch={onArtistSearch} />
+      </div>
+
+      {/* Loading */}
+      {loading && (
+        <div className="loading-state">
+          <div className="spinner" />
+          <p>{loadingMsg || 'Fetching lyrics…'}</p>
+        </div>
+      )}
+
+      {/* Song picker */}
+      {!loading && pickerResults?.length > 0 && (
+        <SongPicker
+          results={pickerResults}
+          query={pickerQuery}
+          onPick={onPickSong}
+          onCancel={onCancelPicker}
+        />
+      )}
+
+      {/* Player */}
+      {!loading && !pickerResults && song && (
+        <div className="player-section">
+          <div className="player-layout">
+            <LyricsPanel
+              song={song}
+              activeLyricIdx={activeLyricIdx}
+              introSecsRemaining={introSecsRemaining}
+              isPlaying={isPlaying}
+              currentSec={currentSec}
+              lyricOffset={lyricOffset}
+              onSetLyricOffset={setLyricOffset}
+              onSeek={seekTo}
+              isFav={isFav(song.title)}
+              onToggleFav={() => onToggleFav(song.title)}
+              onOpenSpotify={onOpenSpotify}
+              onCopy={onCopy}
+              onBackToResults={onBackToResults}
+            />
+            <div className="player-panel">
+              <PlayerCard
+                song={song}
+                isPlaying={isPlaying}
+                currentSec={currentSec}
+                duration={duration}
+                progress={progress}
+                onTogglePlay={togglePlay}
+                onRestart={restart}
+                onSkipForward={skipForward}
+                onSeekByPercent={seekByPercent}
+                speed={speed}
+                onSetSpeed={setSpeed}
+                volume={volume}
+                onSetVolume={setVolume}
+                mode={mode}
+                videoId={videoId}
+                loading={playerLoading}
+                lyricOffset={lyricOffset}
+                onSetLyricOffset={setLyricOffset}
+                onYTReady={onYTReady}
+                onYTTimeUpdate={onYTTimeUpdate}
+                onYTStateChange={onYTStateChange}
+                onManualVideoId={manualSetVideoId}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Favourites */}
+      {!pickerResults && favSongs.length > 0 && (
+        <div className="fav-section">
+          <h3 className="section-heading">
+            <i className="ti ti-heart-filled" style={{ color: '#EF4444' }} />
+            Your favourites
+          </h3>
+          <div className="results-grid">
+            {favSongs.map(s => (
+              <SongCard key={s.title} song={s} onClick={loadSong} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
