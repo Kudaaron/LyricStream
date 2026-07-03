@@ -1,4 +1,4 @@
-const BASE = import.meta.env.VITE_LCCRIB_URL;
+const BASE = import.meta.env.VITE_LRCLIB_URL;
 
 export async function fetchLRCLibLyrics(title, artist) {
   try {
