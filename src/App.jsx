@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import Navbar from './components/Navbar';
 import SearchTab from './components/SearchTab';
 import AboutTab from './components/AboutTab';
@@ -204,6 +205,7 @@ export default function App() {
       </main>
       <Footer />
       <Toast message={toast} />
+      <Analytics />
     </>
   );
 }
