@@ -1,7 +1,8 @@
 export default function Navbar({ activeTab, onTabChange, theme, onToggleTheme }) {
   const tabs = [
-    { id: 'search', icon: 'ti-search',       label: 'Search' },
-    { id: 'about',  icon: 'ti-info-circle',   label: 'About'  },
+    { id: 'search',     icon: 'ti-search',       label: 'Search'     },
+    { id: 'favourites', icon: 'ti-heart',         label: 'Favourites' },
+    { id: 'about',      icon: 'ti-info-circle',   label: 'About'      },
   ];
 
   return (
@@ -19,7 +20,7 @@ export default function Navbar({ activeTab, onTabChange, theme, onToggleTheme })
             onClick={() => onTabChange(tab.id)}
           >
             <i className={`ti ${tab.icon}`} />
-            {tab.label}
+            <span>{tab.label}</span>
           </button>
         ))}
       </div>

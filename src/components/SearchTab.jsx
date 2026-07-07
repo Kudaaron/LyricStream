@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import SearchBar from './SearchBar';
 import LyricsPanel from './LyricsPanel';
 import PlayerCard from './PlayerCard';
@@ -24,12 +25,27 @@ export default function SearchTab({
 
   const favSongs = getAllSongs().filter(s => favorites.includes(s.title));
 
+  // Lock page scroll on mobile when player is active
+  // This enables the full-viewport split layout (player top, lyrics bottom)
+  const playerActive = !loading && !pickerResults && !!song;
+  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 600;
+
+  // We use a class on <html> rather than JS scroll lock so CSS can
+  // respond cleanly and it survives React re-renders without jank.
+  if (typeof document !== 'undefined') {
+    if (playerActive) {
+      document.documentElement.classList.add('player-active');
+    } else {
+      document.documentElement.classList.remove('player-active');
+    }
+  }
+
   return (
     <div>
       {/* Hero */}
       <div className="search-hero">
         <h1 className="hero-title">Find lyrics for any song</h1>
-        <p className="hero-sub">Powered by LRCLIB </p>
+        <p className="hero-sub">Powered by LRCLIB · Free · No API key needed</p>
         <SearchBar onSearch={onSearch} onArtistSearch={onArtistSearch} />
       </div>
 

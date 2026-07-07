@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import Navbar from './components/Navbar';
+import FavouritesTab from './components/FavouritesTab';
 import SearchTab from './components/SearchTab';
 import AboutTab from './components/AboutTab';
 import Toast from './components/Toast';
-import Footer from './components/Footer';
 
 import { useTheme } from './hooks/useTheme';
 import { usePlayer } from './hooks/usePlayer';
@@ -18,7 +18,6 @@ import {
 } from './api/lrclib';
 
 import './styles/main.css';
-
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('search');
@@ -201,8 +200,21 @@ export default function App() {
           />
         )}
         {activeTab === 'about' && <AboutTab />}
+        {activeTab === 'favourites' && (
+          <FavouritesTab
+            favorites={favorites}
+            onPlaySong={async (song) => {
+              setActiveTab('search');
+              player.loadSong(null);
+              await player.loadSong(song);
+            }}
+            onRemoveFav={(title) => {
+              toggleFav(title);
+              showToast('Removed from favourites');
+            }}
+          />
+        )}
       </main>
-      <Footer />
       <Toast message={toast} />
     </>
   );
