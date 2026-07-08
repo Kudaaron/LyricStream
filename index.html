@@ -1,17 +1,37 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LyricStream</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css" />
-    <script>
-      try {
-        var t = localStorage.getItem('ls_theme') || 'light';
-        document.documentElement.setAttribute('data-theme', t);
-      } catch(e) {}
-    </script>
-  </head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>LyricStream - Search Song Lyrics Instantly</title>
+
+  <meta
+    name="description"
+    content="Search song lyrics instantly with LyricStream. Find lyrics from thousands of songs quickly and easily."
+  />
+
+  <meta
+    name="keywords"
+    content="lyrics, song lyrics, music, lyric search, LyricStream"
+  />
+
+  <meta name="robots" content="index, follow" />
+
+  <link rel="canonical" href="https://lyric-stream-six.vercel.app/" />
+
+  <link rel="icon" href="/favicon.png" />
+
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css" />
+
+  <script>
+    try {
+      var t = localStorage.getItem("ls_theme") || "light";
+      document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {}
+  </script>
+</head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
