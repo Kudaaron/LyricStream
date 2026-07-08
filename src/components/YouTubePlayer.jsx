@@ -43,7 +43,7 @@ export default function YouTubePlayer({ videoId, onTimeUpdate, onStateChange, on
                 rel: 0,
                 modestbranding: 1,
                 iv_load_policy: 3,
-                playsinline: 1, // ← critical for iOS — prevents fullscreen takeover
+                playsinline: 1,
             },
             events: {
                 onReady: (e) => { onReady?.(e.target); },
@@ -69,7 +69,7 @@ export default function YouTubePlayer({ videoId, onTimeUpdate, onStateChange, on
             try { playerRef.current?.destroy(); } catch { }
             playerRef.current = null;
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+
     }, []);
 
     useEffect(() => {
@@ -86,7 +86,7 @@ export default function YouTubePlayer({ videoId, onTimeUpdate, onStateChange, on
             paddingBottom: '56.25%',
             height: 0,
             background: '#000',
-            width: '100%',
+            width: '150%',
         }}>
             {/* YT SDK replaces this div with the actual iframe */}
             <div
