@@ -23,7 +23,8 @@ export default function SearchTab({
     manualSetVideoId, loadSong,
   } = player;
 
-  const favSongs = getAllSongs().filter(s => favorites.includes(s.title));
+  const favTitles = new Set(favorites.map(f => f.title));
+  const favSongs = getAllSongs().filter(s => favTitles.has(s.title));
 
   // Lock page scroll on mobile when player is active
   // This enables the full-viewport split layout (player top, lyrics bottom)
@@ -81,7 +82,7 @@ export default function SearchTab({
               onSetLyricOffset={setLyricOffset}
               onSeek={seekTo}
               isFav={isFav(song.title)}
-              onToggleFav={() => onToggleFav(song.title)}
+              onToggleFav={() => onToggleFav(song)}
               onOpenSpotify={onOpenSpotify}
               onCopy={onCopy}
               onBackToResults={onBackToResults}

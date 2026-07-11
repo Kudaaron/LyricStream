@@ -166,10 +166,56 @@ export default function App() {
     }
   };
 
-  const handleToggleFav = (title) => {
+  // Accepts either a full song object (favouriting from the player, so the
+  // exact lyrics get cached) or a plain title string (removing a favourite).
+  const handleToggleFav = (songOrTitle) => {
+    const title = typeof songOrTitle === 'string' ? songOrTitle : songOrTitle.title;
     const wasF = isFav(title);
-    toggleFav(title);
+    toggleFav(songOrTitle);
     showToast(wasF ? 'Removed from favourites' : '❤ Added to favourites');
+  };
+
+  // ── Play a favourited song ───────────────────────────────────────
+  // Favourites only ever persist a title (see useFavorites). Built-in
+  // songs come back from getAllSongs() with full lyrics already attached,
+  // but anything found via search has no cached lyrics at all — so we
+  // re-fetch from LRCLIB here, the same way a fresh search would, before
+  // handing the song to the player. This is what actually stops the
+  // blank-screen crash (LyricsPanel now also guards against missing
+  // lyrics, but without this the song would still play with no lyrics).
+  const handlePlayFavourite = async (song) => {
+    setActiveTab('search');
+    player.loadSong(null);
+
+    if (song.lyrics?.length > 0) {
+      await player.loadSong(song);
+      return;
+    }
+
+    setLoading(true);
+    setLoadingMsg('Loading lyrics…');
+    try {
+      let result = null;
+      if (song.artist) {
+        result = await fetchLRCLibLyrics(song.title, song.artist);
+      }
+      if (!result?.lyrics?.length) {
+        const query = song.artist ? `${song.title} ${song.artist}` : song.title;
+        const results = await searchLRCLib(query);
+        if (results.length > 0) {
+          result = await resolvePickedSong(results[0]);
+        }
+      }
+      if (result?.lyrics?.length > 0) {
+        await player.loadSong({ ...result, genre: '', year: '', spotify: null });
+      } else {
+        showNoLyricsFound(song.title, song.artist);
+      }
+    } catch {
+      showToast('Could not load that song. Try another.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -204,11 +250,7 @@ export default function App() {
         {activeTab === 'favourites' && (
           <FavouritesTab
             favorites={favorites}
-            onPlaySong={async (song) => {
-              setActiveTab('search');
-              player.loadSong(null);
-              await player.loadSong(song);
-            }}
+            onPlaySong={handlePlayFavourite}
             onRemoveFav={(title) => {
               toggleFav(title);
               showToast('Removed from favourites');

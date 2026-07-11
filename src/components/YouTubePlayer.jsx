@@ -69,7 +69,7 @@ export default function YouTubePlayer({ videoId, onTimeUpdate, onStateChange, on
             try { playerRef.current?.destroy(); } catch { }
             playerRef.current = null;
         };
-
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -80,15 +80,24 @@ export default function YouTubePlayer({ videoId, onTimeUpdate, onStateChange, on
     }, [videoId]);
 
     return (
-        // Outer div: sets the 16:9 box
+        /* 
+          Key: 100vw-aware responsive 16:9 container.
+          - display:block removes inline-block gap
+          - width:100% fills parent completely
+          - padding-bottom:56.25% = 16:9 ratio
+          - The YT SDK replaces containerRef div with an <iframe>
+            that is absolutely positioned to fill the box
+        */
         <div style={{
+            display: 'block',
             position: 'relative',
+            width: '100%',
+            maxWidth: '100%',
             paddingBottom: '56.25%',
             height: 0,
             background: '#000',
-            width: '150%',
+            overflow: 'hidden',
         }}>
-            {/* YT SDK replaces this div with the actual iframe */}
             <div
                 ref={containerRef}
                 style={{

@@ -143,7 +143,7 @@ export default function LyricsPanel({
 
       {/* Lyric lines — scrolls independently, page never moves */}
       <div className="lyrics-container" ref={containerRef}>
-        {song.lyrics.map((line, i) => {
+        {(song.lyrics || []).map((line, i) => {
           const isActive = i === activeLyricIdx;
           const isPast = activeLyricIdx >= 0 && i < activeLyricIdx;
           const isNear = !isActive && Math.abs(i - activeLyricIdx) === 1;

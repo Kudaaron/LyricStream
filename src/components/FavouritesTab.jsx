@@ -8,15 +8,16 @@ function fmt(s) {
 
 export default function FavouritesTab({ favorites, onPlaySong, onRemoveFav }) {
     const allBuiltIn = getAllSongs();
+    const favTitles = new Set(favorites.map(f => f.title));
 
-    // Built-in songs that are favourited
-    const builtInFavs = allBuiltIn.filter(s => favorites.includes(s.title));
+    // Built-in songs that are favourited — always has full data from the library
+    const builtInFavs = allBuiltIn.filter(s => favTitles.has(s.title));
 
-    // Any favourited songs not in the built-in library (searched + hearted)
+    // Any favourited songs not in the built-in library (searched + hearted).
+    // These already carry their own cached title/artist/duration/lyrics —
+    // no more building an empty stub here.
     const builtInTitles = new Set(allBuiltIn.map(s => s.title));
-    const extraFavs = favorites
-        .filter(t => !builtInTitles.has(t))
-        .map(t => ({ title: t, artist: '', duration: 0 }));
+    const extraFavs = favorites.filter(f => !builtInTitles.has(f.title));
 
     const allFavs = [...builtInFavs, ...extraFavs];
 

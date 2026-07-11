@@ -48,7 +48,17 @@ export default function PlayerCard({
 
       {/* YouTube embed OR album art */}
       {mode === 'youtube' && videoId ? (
-        <div className="yt-embed-wrap">
+        <div
+          className="yt-embed-wrap"
+          style={{
+            display: 'block',
+            width: '100%',
+            maxWidth: '100%',
+            overflow: 'hidden',
+            alignSelf: 'stretch',
+            flexShrink: 0,
+          }}
+        >
           <YouTubePlayer
             videoId={videoId}
             onReady={onYTReady}
