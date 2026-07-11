@@ -1223,6 +1223,9 @@ input {
   color: var(--green);
   border: 1px solid rgba(16, 185, 129, 0.2);
 }
+.audio-badge--live .ti-loader {
+  animation: spin 1s linear infinite;
+}
 .audio-badge--preview {
   background: rgba(245, 158, 11, 0.1);
   color: var(--amber);
@@ -1255,6 +1258,9 @@ input {
   border-radius: 4px;
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
   pointer-events: none;
+}
+.progress-bar-bg:hover .progress-fill {
+  filter: brightness(1.1);
 }
 .progress-thumb {
   position: absolute;
@@ -1318,6 +1324,10 @@ input {
   color: #fff;
   font-size: 26px;
   box-shadow: 0 6px 20px rgba(14, 165, 233, 0.4);
+  transition:
+    transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.25s ease,
+    background 0.2s ease;
 }
 .ctrl-play:hover {
   box-shadow: 0 8px 28px rgba(14, 165, 233, 0.5);
@@ -1481,7 +1491,7 @@ input {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   FAVOURITES
+   FAVOURITES (results grid on search tab)
    ═══════════════════════════════════════════════════════════════ */
 .fav-section {
   margin-top: 2rem;
@@ -1710,23 +1720,6 @@ input {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   SEARCH MODE TOGGLE / AUDIO BADGES
-   ═══════════════════════════════════════════════════════════════ */
-.audio-badge--live .ti-loader {
-  animation: spin 1s linear infinite;
-}
-.player-badge-wrap {
-  padding: 0 1.25rem;
-  text-align: center;
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   NO LYRICS / MANUAL YT BADGE
-   ═══════════════════════════════════════════════════════════════ */
-.audio-badge--preview {
-}
-
-/* ═══════════════════════════════════════════════════════════════
    ANIMATIONS
    ═══════════════════════════════════════════════════════════════ */
 @keyframes fadeIn {
@@ -1925,16 +1918,6 @@ input {
   transform: translateX(-1px) scale(0.92);
 }
 
-.ctrl-play {
-  transition:
-    transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
-    box-shadow 0.25s ease,
-    background 0.2s ease;
-}
-.progress-bar-bg:hover .progress-fill {
-  filter: brightness(1.1);
-}
-
 /* ═══════════════════════════════════════════════════════════════
    RESPONSIVE — TABLET (≤ 820px)
    ═══════════════════════════════════════════════════════════════ */
@@ -2068,9 +2051,19 @@ input {
     flex-shrink: 0;
     align-self: stretch;
 
-    overflow: visible;
+    /* Cap how much of the screen the player card can claim so the
+       lyrics panel below always keeps real, usable space — without
+       this the video + controls could push lyrics off-screen entirely. */
+    max-height: 56vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+
     background: var(--surface);
     border-bottom: 1px solid var(--border);
+  }
+  .player-panel::-webkit-scrollbar {
+    display: none;
   }
 
   .player-card {
@@ -2176,7 +2169,10 @@ input {
 
     align-self: stretch;
 
-    min-height: 0;
+    /* Guarantees the song header (title + back button) and at least a
+       few lines of lyrics are always visible, no matter how tall the
+       player card above ends up being. */
+    min-height: 32vh;
 
     border: none;
     border-top: 1px solid var(--border);
