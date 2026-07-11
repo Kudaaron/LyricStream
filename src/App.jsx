@@ -153,9 +153,40 @@ export default function App() {
   };
 
   const handleOpenSpotify = () => {
-    const q = encodeURIComponent(`${player.song?.title || ''} ${player.song?.artist || ''}`);
-    if (player.song?.spotify) window.open(player.song.spotify, '_blank');
-    else window.open(`https://open.spotify.com/search/${q}`, '_blank');
+    if (player.song?.spotify) {
+      window.open(player.song.spotify, '_blank');
+      return;
+    }
+
+    const q = `${player.song?.title || ''} ${player.song?.artist || ''}`.trim();
+    const encoded = encodeURIComponent(q);
+    // /tracks skips Spotify's mixed "Top Result / Songs / Albums" landing
+    // page and goes straight to a scrollable list of matching tracks —
+    // one tap to play instead of tap, scroll, tap.
+    const webUrl = `https://open.spotify.com/search/${encoded}/tracks`;
+
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (!isMobile) {
+      window.open(webUrl, '_blank');
+      return;
+    }
+
+    // On mobile, try handing off to the native Spotify app's own search
+    // first — feels far snappier than a browser tab. If the app isn't
+    // installed, the page never loses focus and we fall back to the
+    // web link a moment later.
+    const appUri = `spotify:search:${encoded}`;
+    const fallback = setTimeout(() => {
+      if (!document.hidden) window.open(webUrl, '_blank');
+    }, 1200);
+    const onVisibility = () => {
+      if (document.hidden) {
+        clearTimeout(fallback);
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.location.href = appUri;
   };
 
   const handleBackToResults = () => {

@@ -158,9 +158,14 @@ export default function LyricsPanel({
                 isPast ? 'past' : '',
                 isNear ? 'near' : '',
               ].filter(Boolean).join(' ')}
-              style={{ fontSize: isActive ? fontSize + 3 : fontSize }}
+              style={{ fontSize: isActive ? fontSize + 3 : fontSize, '--i': i }}
               onClick={() => onSeek(line.t)}
             >
+              {isActive && isPlaying && (
+                <span className="lyric-eq" aria-hidden="true">
+                  <span /><span /><span />
+                </span>
+              )}
               {line.l || <span className="lyric-spacer">♪</span>}
             </div>
           );
