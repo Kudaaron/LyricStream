@@ -5,10 +5,12 @@ import FavouritesTab from './components/FavouritesTab';
 import SearchTab from './components/SearchTab';
 import AboutTab from './components/AboutTab';
 import Toast from './components/Toast';
+import MiniPlayerBar from './components/MiniPlayerBar';
 
 import { useTheme } from './hooks/useTheme';
 import { usePlayer } from './hooks/usePlayer';
 import { useFavorites } from './hooks/useFavorites';
+import { useRecentlyPlayed } from './hooks/useRecentlyPlayed';
 import { useToast } from './hooks/useToast';
 
 import { findSongInLibrary } from './data/songs';
@@ -29,7 +31,8 @@ export default function App() {
   const [lastPicker, setLastPicker] = useState(null);
 
   const { theme, toggle: toggleTheme } = useTheme();
-  const player = usePlayer();
+  const { recentlyPlayed, add: addRecentlyPlayed } = useRecentlyPlayed();
+  const player = usePlayer({ onSongLoad: addRecentlyPlayed });
   const { favorites, toggle: toggleFav, isFav } = useFavorites();
   const { toast, showToast } = useToast();
 
@@ -136,6 +139,7 @@ export default function App() {
     player.loadSong({
       title, artist: artist || 'Unknown',
       genre: '', year: '', duration: 0, spotify: null,
+      isPlaceholder: true,
       lyrics: [
         { t: 0, l: '⚠ No lyrics found for this song.' },
         { t: 4, l: 'Try "Song Title - Artist Name" format' },
@@ -258,7 +262,10 @@ export default function App() {
         onToggleTheme={toggleTheme}
       />
       <main className="main-content">
-        {activeTab === 'search' && (
+        {/* Always mounted (hidden, not unmounted, when another tab is
+            active) — this is what keeps YouTube/audio playback alive
+            when you switch to Favourites or About mid-song. */}
+        <div className={activeTab === 'search' ? '' : 'hidden'}>
           <SearchTab
             player={player}
             loading={loading}
@@ -275,8 +282,10 @@ export default function App() {
             onCopy={handleCopy}
             onOpenSpotify={handleOpenSpotify}
             favorites={favorites}
+            recentlyPlayed={recentlyPlayed}
+            isActiveTab={activeTab === 'search'}
           />
-        )}
+        </div>
         {activeTab === 'about' && <AboutTab />}
         {activeTab === 'favourites' && (
           <FavouritesTab
@@ -289,6 +298,11 @@ export default function App() {
           />
         )}
       </main>
+      <MiniPlayerBar
+        player={player}
+        visible={!!player.song && activeTab !== 'search'}
+        onExpand={() => setActiveTab('search')}
+      />
       <Toast message={toast} />
       <Analytics />
     </>

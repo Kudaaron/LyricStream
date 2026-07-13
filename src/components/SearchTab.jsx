@@ -10,7 +10,7 @@ export default function SearchTab({
   player, loading, loadingMsg, onSearch, onArtistSearch,
   pickerResults, pickerQuery, onPickSong, onCancelPicker, onBackToResults,
   isFav, onToggleFav, onCopy, onOpenSpotify,
-  favorites,
+  favorites, recentlyPlayed, isActiveTab,
 }) {
   const {
     song, isPlaying, currentSec, duration, progress,
@@ -27,8 +27,11 @@ export default function SearchTab({
   const favSongs = getAllSongs().filter(s => favTitles.has(s.title));
 
   // Lock page scroll on mobile when player is active
-  // This enables the full-viewport split layout (player top, lyrics bottom)
-  const playerActive = !loading && !pickerResults && !!song;
+  // This enables the full-viewport split layout (player top, lyrics bottom).
+  // Gated on isActiveTab so this component (now permanently mounted to
+  // keep playback alive across tabs) never locks scrolling on Favourites
+  // or About just because a song happens to be loaded in the background.
+  const playerActive = isActiveTab && !loading && !pickerResults && !!song;
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 600;
 
   // We use a class on <html> rather than JS scroll lock so CSS can
@@ -113,6 +116,21 @@ export default function SearchTab({
                 onManualVideoId={manualSetVideoId}
               />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recently played */}
+      {!pickerResults && recentlyPlayed.length > 0 && (
+        <div className="fav-section">
+          <h3 className="section-heading">
+            <i className="ti ti-history" style={{ color: 'var(--accent)' }} />
+            Recently played
+          </h3>
+          <div className="results-grid">
+            {recentlyPlayed.map(s => (
+              <SongCard key={s.title} song={s} onClick={loadSong} />
+            ))}
           </div>
         </div>
       )}

@@ -7,7 +7,7 @@ import { fetchItunesPreview } from "../api/itunes";
 // 'preview' — 30s iTunes AAC via <audio> (fallback)
 // 'sim'     — no audio, simulated timer (last resort)
 
-export function usePlayer() {
+export function usePlayer({ onSongLoad } = {}) {
   const [song, setSong] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentSec, setCurrentSec] = useState(0);
@@ -69,6 +69,13 @@ export function usePlayer() {
       setSong(newSong);
       songRef.current = newSong;
 
+      // Record this as a "recently played" song — skipped for internal
+      // placeholder songs (e.g. the "no lyrics found" message) so the
+      // history only ever shows things the person actually looked up.
+      if (onSongLoad && !newSong.isPlaceholder) {
+        onSongLoad(newSong);
+      }
+
       // 1. YouTube full song
       // If the song came with real lyric timestamps (e.g. from LRCLIB),
       // that confirms the song genuinely exists, so we tell the YouTube
@@ -118,7 +125,7 @@ export function usePlayer() {
       setLoading(false);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
-    [volume, speed],
+    [volume, speed, onSongLoad],
   );
 
   // ── YouTube player callbacks ──────────────────────────
