@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import Navbar from './components/Navbar';
 import FavouritesTab from './components/FavouritesTab';
 import SearchTab from './components/SearchTab';
@@ -331,6 +332,7 @@ export default function App() {
       </ErrorBoundary>
       <Toast message={toast} />
       <Analytics />
+      <SpeedInsights />
     </>
   );
 }
