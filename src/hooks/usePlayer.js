@@ -25,6 +25,11 @@ export function usePlayer({ onSongLoad } = {}) {
   const ytPlayerRef = useRef(null);
   const rafRef = useRef(null);
   const lyricOffsetRef = useRef(0);
+  // Set true at the start of every loadSong() call, consumed (and reset)
+  // by the next onYTReady. This is what stops a background iframe
+  // reconnect (e.g. after being hidden/shown on mobile) from forcing
+  // playback back to 0 — only an actual new song should do that.
+  const isFreshLoadRef = useRef(false);
 
   const updateLyricOffset = useCallback((val) => {
     lyricOffsetRef.current = val;
@@ -68,6 +73,7 @@ export function usePlayer({ onSongLoad } = {}) {
       updateLyricOffset(0);
       setSong(newSong);
       songRef.current = newSong;
+      isFreshLoadRef.current = true;
 
       // Record this as a "recently played" song — skipped for internal
       // placeholder songs (e.g. the "no lyrics found" message) so the
@@ -133,7 +139,10 @@ export function usePlayer({ onSongLoad } = {}) {
     (ytPlayer) => {
       ytPlayerRef.current = ytPlayer;
       ytPlayer.setVolume(volume);
-      ytPlayer.seekTo(0, true); // always start from beginning
+      if (isFreshLoadRef.current) {
+        ytPlayer.seekTo(0, true); // only on an actual new song load
+        isFreshLoadRef.current = false;
+      }
     },
     [volume],
   );

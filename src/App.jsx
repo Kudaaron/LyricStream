@@ -6,6 +6,8 @@ import SearchTab from './components/SearchTab';
 import AboutTab from './components/AboutTab';
 import Toast from './components/Toast';
 import MiniPlayerBar from './components/MiniPlayerBar';
+import Footer from './components/Footer';
+import ErrorBoundary from './components/ErrorBoundary';
 
 import { useTheme } from './hooks/useTheme';
 import { usePlayer } from './hooks/usePlayer';
@@ -262,47 +264,71 @@ export default function App() {
         onToggleTheme={toggleTheme}
       />
       <main className="main-content">
-        {/* Always mounted (hidden, not unmounted, when another tab is
-            active) — this is what keeps YouTube/audio playback alive
-            when you switch to Favourites or About mid-song. */}
-        <div className={activeTab === 'search' ? '' : 'hidden'}>
-          <SearchTab
-            player={player}
-            loading={loading}
-            loadingMsg={loadingMsg}
-            onSearch={handleSearch}
-            onArtistSearch={handleArtistSearch}
-            pickerResults={pickerResults}
-            pickerQuery={pickerQuery}
-            onPickSong={loadFromPick}
-            onCancelPicker={() => setPickerResults(null)}
-            onBackToResults={lastPicker ? handleBackToResults : null}
-            isFav={isFav}
-            onToggleFav={handleToggleFav}
-            onCopy={handleCopy}
-            onOpenSpotify={handleOpenSpotify}
-            favorites={favorites}
-            recentlyPlayed={recentlyPlayed}
-            isActiveTab={activeTab === 'search'}
-          />
-        </div>
-        {activeTab === 'about' && <AboutTab />}
-        {activeTab === 'favourites' && (
-          <FavouritesTab
-            favorites={favorites}
-            onPlaySong={handlePlayFavourite}
-            onRemoveFav={(title) => {
-              toggleFav(title);
-              showToast('Removed from favourites');
-            }}
-          />
+        {/* Always mounted — this is what keeps YouTube/audio playback
+            alive when you switch to Favourites or About mid-song.
+            When nothing is playing, a plain display:none is fine and
+            cheap. When a song IS loaded, we use an off-screen (not
+            display:none) technique instead, since display:none causes
+            many mobile browsers to suspend/unload hidden video.
+            Kept in its own error boundary so a crash elsewhere in the
+            app can never take down the tab holding the live player. */}
+        <ErrorBoundary message="The player hit a snag. Your other tabs are unaffected.">
+          <div
+            className={
+              activeTab === 'search'
+                ? ''
+                : player.song
+                  ? 'tab-offscreen'
+                  : 'hidden'
+            }
+          >
+            <SearchTab
+              player={player}
+              loading={loading}
+              loadingMsg={loadingMsg}
+              onSearch={handleSearch}
+              onArtistSearch={handleArtistSearch}
+              pickerResults={pickerResults}
+              pickerQuery={pickerQuery}
+              onPickSong={loadFromPick}
+              onCancelPicker={() => setPickerResults(null)}
+              onBackToResults={lastPicker ? handleBackToResults : null}
+              isFav={isFav}
+              onToggleFav={handleToggleFav}
+              onCopy={handleCopy}
+              onOpenSpotify={handleOpenSpotify}
+              favorites={favorites}
+              recentlyPlayed={recentlyPlayed}
+              isActiveTab={activeTab === 'search'}
+            />
+          </div>
+        </ErrorBoundary>
+        {activeTab === 'about' && (
+          <ErrorBoundary message="This page hit a snag.">
+            <AboutTab />
+          </ErrorBoundary>
         )}
+        {activeTab === 'favourites' && (
+          <ErrorBoundary message="This page hit a snag.">
+            <FavouritesTab
+              favorites={favorites}
+              onPlaySong={handlePlayFavourite}
+              onRemoveFav={(title) => {
+                toggleFav(title);
+                showToast('Removed from favourites');
+              }}
+            />
+          </ErrorBoundary>
+        )}
+        <Footer activeTab={activeTab} onNavigate={setActiveTab} />
       </main>
-      <MiniPlayerBar
-        player={player}
-        visible={!!player.song && activeTab !== 'search'}
-        onExpand={() => setActiveTab('search')}
-      />
+      <ErrorBoundary message="">
+        <MiniPlayerBar
+          player={player}
+          visible={!!player.song && activeTab !== 'search'}
+          onExpand={() => setActiveTab('search')}
+        />
+      </ErrorBoundary>
       <Toast message={toast} />
       <Analytics />
     </>
