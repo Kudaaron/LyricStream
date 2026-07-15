@@ -1,14 +1,16 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { Analytics } from '@vercel/analytics/react';
-import { SpeedInsights } from '@vercel/speed-insights/react';
 import Navbar from './components/Navbar';
 import FavouritesTab from './components/FavouritesTab';
 import SearchTab from './components/SearchTab';
-import AboutTab from './components/AboutTab';
 import Toast from './components/Toast';
 import MiniPlayerBar from './components/MiniPlayerBar';
 import Footer from './components/Footer';
 import ErrorBoundary from './components/ErrorBoundary';
+
+// Lazy-loaded: About is rarely the first thing anyone opens, so it
+// doesn't need to be in the initial JS bundle everyone downloads.
+const AboutTab = lazy(() => import('./components/AboutTab'));
 
 import { useTheme } from './hooks/useTheme';
 import { usePlayer } from './hooks/usePlayer';
@@ -306,7 +308,14 @@ export default function App() {
         </ErrorBoundary>
         {activeTab === 'about' && (
           <ErrorBoundary message="This page hit a snag.">
-            <AboutTab />
+            <Suspense fallback={
+              <div className="loading-state">
+                <div className="spinner" />
+                <p>Loading…</p>
+              </div>
+            }>
+              <AboutTab />
+            </Suspense>
           </ErrorBoundary>
         )}
         {activeTab === 'favourites' && (
@@ -332,7 +341,6 @@ export default function App() {
       </ErrorBoundary>
       <Toast message={toast} />
       <Analytics />
-      <SpeedInsights />
     </>
   );
 }
