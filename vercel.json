@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/(robots.txt|sitemap.xml|favicon.png|google5e025f5823eff3f7.html)",
+      "destination": "/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
