@@ -1,5 +1,3 @@
-import { getAllSongs } from '../data/songs';
-
 function fmt(s) {
     if (!s) return '';
     s = Math.floor(s);
@@ -7,19 +5,12 @@ function fmt(s) {
 }
 
 export default function FavouritesTab({ favorites, onPlaySong, onRemoveFav }) {
-    const allBuiltIn = getAllSongs();
-    const favTitles = new Set(favorites.map(f => f.title));
-
-    // Built-in songs that are favourited — always has full data from the library
-    const builtInFavs = allBuiltIn.filter(s => favTitles.has(s.title));
-
-    // Any favourited songs not in the built-in library (searched + hearted).
-    // These already carry their own cached title/artist/duration/lyrics —
-    // no more building an empty stub here.
-    const builtInTitles = new Set(allBuiltIn.map(s => s.title));
-    const extraFavs = favorites.filter(f => !builtInTitles.has(f.title));
-
-    const allFavs = [...builtInFavs, ...extraFavs];
+    // Uses the real cached favorite data directly — title, artist, and
+    // the actual synced lyrics captured at favourite-time — rather than
+    // cross-referencing the old hardcoded demo library, which could
+    // silently substitute dummy placeholder lyrics for any favourite
+    // whose title happened to match one of the demo songs.
+    const allFavs = favorites;
 
     if (allFavs.length === 0) {
         return (

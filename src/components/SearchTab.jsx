@@ -4,7 +4,6 @@ import LyricsPanel from './LyricsPanel';
 import PlayerCard from './PlayerCard';
 import SongCard from './SongCard';
 import SongPicker from './SongPicker';
-import { getAllSongs } from '../data/songs';
 
 export default function SearchTab({
   player, loading, loadingMsg, onSearch, onArtistSearch,
@@ -23,8 +22,13 @@ export default function SearchTab({
     manualSetVideoId, loadSong,
   } = player;
 
-  const favTitles = new Set(favorites.map(f => f.title));
-  const favSongs = getAllSongs().filter(s => favTitles.has(s.title));
+  // Uses the real cached favorite data directly (title, artist, and the
+  // actual synced lyrics captured when it was favourited) rather than
+  // cross-referencing the old hardcoded demo library — that cross-
+  // reference was both showing dummy placeholder lyrics for any title
+  // that happened to collide with a demo song, and silently hiding any
+  // favourite that wasn't in that demo list at all.
+  const favSongs = favorites;
 
   // Lock page scroll on mobile when player is active
   // This enables the full-viewport split layout (player top, lyrics bottom).

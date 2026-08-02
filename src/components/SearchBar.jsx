@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { getAllSongs } from '../data/songs';
 
 const QUICK_TAGS = [
   'Blinding Lights', 'Shape of You', 'Bohemian Rhapsody',
@@ -16,24 +15,15 @@ function useDebounce(fn, delay) {
 }
 
 export default function SearchBar({ onSearch, onArtistSearch }) {
-  const [query, setQuery]           = useState('');
+  const [query, setQuery] = useState('');
   const [searchMode, setSearchMode] = useState('song');
   const [suggestions, setSuggestions] = useState([]);
-  const [open, setOpen]             = useState(false);
+  const [open, setOpen] = useState(false);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
-  const [activeIdx, setActiveIdx]   = useState(-1); // keyboard nav
-  const wrapRef                     = useRef(null);
-  const inputRef                    = useRef(null);
-  const abortRef                    = useRef(null); // cancel in-flight requests
-
-  // Local songs (instant, shown first)
-  const localSongs = getAllSongs().map(s => ({
-    label:  `${s.title} — ${s.artist}`,
-    query:  `${s.title} - ${s.artist}`,
-    type:   'local',
-    title:  s.title,
-    artist: s.artist,
-  }));
+  const [activeIdx, setActiveIdx] = useState(-1); // keyboard nav
+  const wrapRef = useRef(null);
+  const inputRef = useRef(null);
+  const abortRef = useRef(null); // cancel in-flight requests
 
   // Fetch suggestions from LRCLIB as user types
   const fetchSuggestions = useCallback(async (val) => {
@@ -49,9 +39,7 @@ export default function SearchBar({ onSearch, onArtistSearch }) {
     setLoadingSuggestions(true);
 
     try {
-      const endpoint = searchMode === 'artist'
-        ? `https://lrclib.net/api/search?q=${encodeURIComponent(val)}`
-        : `https://lrclib.net/api/search?q=${encodeURIComponent(val)}`;
+      const endpoint = `https://lrclib.net/api/search?q=${encodeURIComponent(val)}`;
 
       const res = await fetch(endpoint, { signal: abortRef.current.signal });
       if (!res.ok) throw new Error('fetch failed');
@@ -67,38 +55,23 @@ export default function SearchBar({ onSearch, onArtistSearch }) {
         if (seen.has(key)) continue;
         seen.add(key);
         remote.push({
-          label:  `${r.trackName} — ${r.artistName}`,
-          query:  `${r.trackName} - ${r.artistName}`,
-          type:   'remote',
-          title:  r.trackName,
+          label: `${r.trackName} — ${r.artistName}`,
+          query: `${r.trackName} - ${r.artistName}`,
+          title: r.trackName,
           artist: r.artistName,
-          album:  r.albumName || '',
+          album: r.albumName || '',
           hasSynced: !!r.syncedLyrics,
         });
-        if (remote.length >= 7) break;
+        if (remote.length >= 8) break;
       }
 
-      // Merge: local matches first, then LRCLIB results (dedupe again)
-      const q = val.toLowerCase();
-      const localMatches = localSongs
-        .filter(s => s.label.toLowerCase().includes(q))
-        .slice(0, 3);
-
-      const remoteFiltered = remote.filter(r =>
-        !localMatches.some(l => l.label.toLowerCase() === r.label.toLowerCase())
-      );
-
-      const merged = [...localMatches, ...remoteFiltered].slice(0, 8);
-      setSuggestions(merged);
-      setOpen(merged.length > 0);
+      setSuggestions(remote);
+      setOpen(remote.length > 0);
       setActiveIdx(-1);
     } catch (err) {
       if (err.name === 'AbortError') return; // cancelled — ignore
-      // On network fail, fall back to local only
-      const q = val.toLowerCase();
-      const local = localSongs.filter(s => s.label.toLowerCase().includes(q)).slice(0, 5);
-      setSuggestions(local);
-      setOpen(local.length > 0);
+      setSuggestions([]);
+      setOpen(false);
     } finally {
       setLoadingSuggestions(false);
     }
@@ -119,7 +92,7 @@ export default function SearchBar({ onSearch, onArtistSearch }) {
     setActiveIdx(-1);
     if (abortRef.current) abortRef.current.abort();
     if (searchMode === 'artist') onArtistSearch(v);
-    else                          onSearch(v);
+    else onSearch(v);
   };
 
   const pickSuggestion = (s) => {
@@ -232,51 +205,29 @@ export default function SearchBar({ onSearch, onArtistSearch }) {
         {/* Autocomplete dropdown */}
         {open && suggestions.length > 0 && (
           <div className="suggestions-dropdown">
+            <div className="suggestion-group-label">
+              <i className="ti ti-world" /> From LRCLIB
+            </div>
 
-            {/* Group header if we have both local and remote */}
-            {suggestions.some(s => s.type === 'local') && suggestions.some(s => s.type === 'remote') && (
-              <>
-                {suggestions.filter(s => s.type === 'local').length > 0 && (
-                  <div className="suggestion-group-label">Quick picks</div>
-                )}
-                {suggestions.filter((s, i) => s.type === 'remote' && suggestions[i - 1]?.type === 'local').length > 0 && null}
-              </>
-            )}
-
-            {suggestions.map((s, i) => {
-              const showRemoteHeader =
-                s.type === 'remote' &&
-                (i === 0 || suggestions[i - 1].type === 'local');
-
-              return (
-                <div key={i}>
-                  {showRemoteHeader && (
-                    <div className="suggestion-group-label">
-                      <i className="ti ti-world" /> From LRCLIB
-                    </div>
-                  )}
-                  <div
-                    className={`suggestion-item${i === activeIdx ? ' suggestion-active' : ''}`}
-                    onMouseDown={() => pickSuggestion(s)}
-                    onMouseEnter={() => setActiveIdx(i)}
-                  >
-                    <div className="suggestion-icon">
-                      <i className={`ti ${s.type === 'local' ? 'ti-music' : 'ti-brand-spotify'}`} />
-                    </div>
-                    <div className="suggestion-text">
-                      <span className="suggestion-title">{s.title}</span>
-                      <span className="suggestion-artist">{s.artist}</span>
-                    </div>
-                    {s.hasSynced && (
-                      <span className="suggestion-synced-dot" title="Has synced lyrics" />
-                    )}
-                    {s.type === 'local' && (
-                      <span className="suggestion-local-badge">saved</span>
-                    )}
-                  </div>
+            {suggestions.map((s, i) => (
+              <div
+                key={i}
+                className={`suggestion-item${i === activeIdx ? ' suggestion-active' : ''}`}
+                onMouseDown={() => pickSuggestion(s)}
+                onMouseEnter={() => setActiveIdx(i)}
+              >
+                <div className="suggestion-icon">
+                  <i className="ti ti-brand-spotify" />
                 </div>
-              );
-            })}
+                <div className="suggestion-text">
+                  <span className="suggestion-title">{s.title}</span>
+                  <span className="suggestion-artist">{s.artist}</span>
+                </div>
+                {s.hasSynced && (
+                  <span className="suggestion-synced-dot" title="Has synced lyrics" />
+                )}
+              </div>
+            ))}
 
             <div className="suggestion-footer">
               <i className="ti ti-keyboard" /> ↑↓ navigate · Enter select · Esc close

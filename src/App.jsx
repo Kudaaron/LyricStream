@@ -18,7 +18,6 @@ import { useFavorites } from './hooks/useFavorites';
 import { useRecentlyPlayed } from './hooks/useRecentlyPlayed';
 import { useToast } from './hooks/useToast';
 
-import { findSongInLibrary } from './data/songs';
 import {
   fetchLRCLibLyrics, searchLRCLib,
   searchLRCLibByArtist, searchLRCLibFuzzy,
@@ -48,14 +47,6 @@ export default function App() {
     setLoadingMsg('Searching…');
     player.loadSong(null);
 
-    // 1. Built-in library
-    const local = findSongInLibrary(query);
-    if (local) {
-      await player.loadSong(local);
-      setLoading(false);
-      return;
-    }
-
     let title = query;
     let artist = '';
     if (query.includes(' - ')) {
@@ -65,7 +56,7 @@ export default function App() {
     }
 
     try {
-      // 2. LRCLIB exact match
+      // 1. LRCLIB exact match
       if (artist) {
         setLoadingMsg('Fetching lyrics…');
         const result = await fetchLRCLibLyrics(title, artist);
@@ -76,7 +67,7 @@ export default function App() {
         }
       }
 
-      // 3. LRCLIB search
+      // 2. LRCLIB search
       setLoadingMsg('Searching lyrics database…');
       let results = await searchLRCLib(query);
       if (!results.length) results = await searchLRCLibFuzzy(title, artist);
@@ -202,8 +193,8 @@ export default function App() {
     if (lastPicker) {
       setPickerResults(lastPicker.results);
       setPickerQuery(lastPicker.query);
-      player.loadSong(null);
     }
+    player.loadSong(null);
   };
 
   // Accepts either a full song object (favouriting from the player, so the
@@ -295,7 +286,7 @@ export default function App() {
               pickerQuery={pickerQuery}
               onPickSong={loadFromPick}
               onCancelPicker={() => setPickerResults(null)}
-              onBackToResults={lastPicker ? handleBackToResults : null}
+              onBackToResults={handleBackToResults}
               isFav={isFav}
               onToggleFav={handleToggleFav}
               onCopy={handleCopy}
