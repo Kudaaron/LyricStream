@@ -733,6 +733,49 @@ input {
   font-weight: 500;
 }
 
+/* Skeleton shimmer — shown while searching, shaped like the lyrics
+   content that's about to load rather than a generic spinner. */
+.skeleton-loader {
+  max-width: 420px;
+  margin: 0 auto 1.5rem;
+  padding: 0 1rem;
+}
+.skeleton-bar {
+  height: 14px;
+  border-radius: 8px;
+  margin: 0 auto 12px;
+  background: linear-gradient(
+    90deg,
+    var(--surface2) 25%,
+    var(--border-s) 50%,
+    var(--surface2) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.4s ease-in-out infinite;
+}
+.skeleton-bar.title {
+  height: 20px;
+  width: 55%;
+  margin-bottom: 20px;
+}
+.skeleton-bar.w-80 {
+  width: 80%;
+}
+.skeleton-bar.w-60 {
+  width: 60%;
+}
+.skeleton-bar.w-40 {
+  width: 40%;
+}
+@keyframes skeletonShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════
    SONG PICKER
    ═══════════════════════════════════════════════════════════════ */
@@ -1023,6 +1066,8 @@ input {
 }
 
 .lyric-line {
+  position: relative;
+  overflow: hidden;
   padding: 8px 12px;
   border-radius: var(--radius-sm);
   font-size: 16px;
@@ -1089,6 +1134,30 @@ input {
 }
 .lyric-spacer {
   opacity: 0.3;
+}
+
+/* Tap-to-seek ripple — a quick ping from the line's center confirms
+   the tap registered, Material-style. Driven by a JS-added class
+   (not :active) so it plays its full duration even on a very quick tap. */
+.lyric-line.rippling::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(14, 165, 233, 0.4);
+  transform: translate(-50%, -50%);
+  animation: lineRipple 0.5s ease-out forwards;
+  pointer-events: none;
+}
+@keyframes lineRipple {
+  to {
+    width: 300%;
+    height: 300%;
+    opacity: 0;
+  }
 }
 
 /* Mini equalizer — appears beside the active line only while the song
@@ -1283,9 +1352,30 @@ input {
   border-radius: var(--radius-lg);
   overflow: hidden;
   flex-shrink: 0;
-  /* Explicit width so it never shifts left or right */
-  width: calc(100% - 2.5rem);
+  /* !important is required here: the player component sets width:100%
+     directly as an inline style via JS, which otherwise always wins
+     over a plain class rule — leaving the margin above with nothing to
+     inset against, causing it to overflow past this box's edge. This is
+     the one and only property this component needs overridden; its own
+     inner wrapper (the padding-bottom aspect-ratio trick) and the
+     iframe itself are already correctly sized via their own inline
+     styles and should not be touched. */
+  width: calc(100% - 2.5rem) !important;
   align-self: stretch;
+}
+/* box-shadow isn't clipped by this element's own overflow:hidden, so
+   this glows around the outside of the rounded video corners cleanly. */
+.yt-embed-wrap.playing {
+  animation: ytGlow 2.4s ease-in-out infinite;
+}
+@keyframes ytGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(14, 165, 233, 0);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1361,6 +1451,20 @@ input {
 @keyframes vinylSpin {
   to {
     transform: rotate(360deg);
+  }
+}
+/* Subtle breathing pulse while actually playing — complements the
+   vinyl spin without competing with it for attention. */
+.player-art-big:has(.vinyl-ring.spinning) {
+  animation: breathe 2.4s ease-in-out infinite;
+}
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.035);
   }
 }
 
@@ -1503,6 +1607,7 @@ input {
   transform: scale(0.88);
 }
 .ctrl-play {
+  position: relative;
   width: 62px;
   height: 62px;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
@@ -1521,6 +1626,35 @@ input {
 }
 .ctrl-play:active {
   transform: scale(0.92);
+}
+
+/* Ripple — concentric rings expanding outward from the play button
+   while a song is actually playing, a tactile "sound is happening"
+   cue rather than a static icon swap. Two rings staggered so a new
+   one is always mid-expansion. */
+.ctrl-play.playing::before,
+.ctrl-play.playing::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  animation: playRipple 1.8s ease-out infinite;
+}
+.ctrl-play.playing::after {
+  animation-delay: 0.6s;
+}
+@keyframes playRipple {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
 }
 
 /* Volume */
@@ -2321,15 +2455,6 @@ input {
     overflow: hidden;
   }
 
-  .yt-embed-wrap iframe,
-  .yt-embed-wrap > div,
-  .yt-embed-wrap > div > div,
-  .yt-embed-wrap object,
-  .yt-embed-wrap embed {
-    width: 100% !important;
-    height: 100% !important;
-  }
-
   .player-art-big {
     width: 100%;
     aspect-ratio: 16 / 9;
@@ -2566,6 +2691,7 @@ input {
   margin-top: 1px;
 }
 .mini-player-play {
+  position: relative;
   width: 38px;
   height: 38px;
   flex-shrink: 0;
@@ -2583,6 +2709,20 @@ input {
 }
 .mini-player-play:active {
   transform: scale(0.9);
+}
+.mini-player-play.playing::before,
+.mini-player-play.playing::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  animation: playRipple 1.8s ease-out infinite;
+}
+.mini-player-play.playing::after {
+  animation-delay: 0.6s;
 }
 @keyframes miniPlayerIn {
   from {

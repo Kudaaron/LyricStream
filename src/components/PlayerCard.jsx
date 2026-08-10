@@ -49,7 +49,7 @@ export default function PlayerCard({
       {/* YouTube embed OR album art */}
       {mode === 'youtube' && videoId ? (
         <div
-          className="yt-embed-wrap"
+          className={`yt-embed-wrap ${isPlaying ? 'playing' : ''}`}
           style={{
             display: 'block',
             width: '100%',
@@ -171,7 +171,7 @@ export default function PlayerCard({
             <i className="ti ti-player-skip-back" />
           </button>
           <button
-            className="ctrl-btn ctrl-play"
+            className={`ctrl-btn ctrl-play ${isPlaying ? 'playing' : ''}`}
             onClick={onTogglePlay}
             disabled={loading}
             style={{ opacity: loading ? 0.5 : 1 }}

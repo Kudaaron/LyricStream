@@ -7,8 +7,15 @@ export default function LyricsPanel({
   onBackToResults,
 }) {
   const [fontSize, setFontSize] = useState(16);
+  const [rippleIdx, setRippleIdx] = useState(null);
   const activeRef = useRef(null);
   const containerRef = useRef(null);
+
+  const handleLineClick = (line, i) => {
+    onSeek(line.t);
+    setRippleIdx(i);
+    setTimeout(() => setRippleIdx((idx) => (idx === i ? null : idx)), 500);
+  };
 
   // Auto-scroll to active line when it changes
   useEffect(() => {
@@ -157,9 +164,10 @@ export default function LyricsPanel({
                 isActive ? 'active' : '',
                 isPast ? 'past' : '',
                 isNear ? 'near' : '',
+                i === rippleIdx ? 'rippling' : '',
               ].filter(Boolean).join(' ')}
               style={{ fontSize: isActive ? fontSize + 3 : fontSize, '--i': i }}
-              onClick={() => onSeek(line.t)}
+              onClick={() => handleLineClick(line, i)}
             >
               {isActive && isPlaying && (
                 <span className="lyric-eq" aria-hidden="true">

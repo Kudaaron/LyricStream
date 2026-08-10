@@ -14,7 +14,7 @@ function useDebounce(fn, delay) {
   }, [fn, delay]);
 }
 
-export default function SearchBar({ onSearch, onArtistSearch }) {
+export default function SearchBar({ onSearch, onArtistSearch, onFocusChange }) {
   const [query, setQuery] = useState('');
   const [searchMode, setSearchMode] = useState('song');
   const [suggestions, setSuggestions] = useState([]);
@@ -90,6 +90,7 @@ export default function SearchBar({ onSearch, onArtistSearch }) {
     setQuery(v);
     setOpen(false);
     setActiveIdx(-1);
+    onFocusChange?.(false);
     if (abortRef.current) abortRef.current.abort();
     if (searchMode === 'artist') onArtistSearch(v);
     else onSearch(v);
@@ -135,11 +136,12 @@ export default function SearchBar({ onSearch, onArtistSearch }) {
     const handler = (e) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target)) {
         setOpen(false); setActiveIdx(-1);
+        onFocusChange?.(false);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  }, [onFocusChange]);
 
   // Reset suggestions when mode changes
   useEffect(() => {
@@ -180,7 +182,13 @@ export default function SearchBar({ onSearch, onArtistSearch }) {
             spellCheck="false"
             onChange={e => handleInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            onFocus={() => suggestions.length && setOpen(true)}
+            onFocus={() => {
+              suggestions.length && setOpen(true);
+              onFocusChange?.(true);
+              // Belt-and-suspenders for cases where the player view
+              // wasn't the reason the bar was out of view (e.g. desktop).
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
           />
 
           {/* Clear button */}
