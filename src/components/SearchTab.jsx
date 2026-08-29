@@ -5,12 +5,14 @@ import PlayerCard from './PlayerCard';
 import SongCard from './SongCard';
 import SongPicker from './SongPicker';
 import MiniPlayerBar from './MiniPlayerBar';
+import SongIdentifier from './SongIdentifier';
+import KaraokeView from './KaraokeView';
 
 export default function SearchTab({
   player, loading, loadingMsg, onSearch, onArtistSearch,
   pickerResults, pickerQuery, onPickSong, onCancelPicker, onBackToResults,
   isFav, onToggleFav, onCopy, onOpenSpotify,
-  favorites, recentlyPlayed, isActiveTab,
+  favorites, recentlyPlayed, isActiveTab, onSongIdentified,
 }) {
   const {
     song, isPlaying, currentSec, duration, progress,
@@ -30,6 +32,7 @@ export default function SearchTab({
   // that happened to collide with a demo song, and silently hiding any
   // favourite that wasn't in that demo list at all.
   const [playerCollapsed, setPlayerCollapsed] = useState(false);
+  const [karaokeOpen, setKaraokeOpen] = useState(false);
 
   const favSongs = favorites;
 
@@ -72,6 +75,7 @@ export default function SearchTab({
         <h1 className="hero-title">Find lyrics for any song</h1>
         <p className="hero-sub">Powered by LRCLIB · Free · No API key needed</p>
         <SearchBar onSearch={onSearch} onArtistSearch={onArtistSearch} onFocusChange={setPlayerCollapsed} />
+        <SongIdentifier onIdentified={onSongIdentified} />
       </div>
 
       {/* Loading */}
@@ -119,6 +123,7 @@ export default function SearchTab({
               onOpenSpotify={onOpenSpotify}
               onCopy={onCopy}
               onBackToResults={onBackToResults}
+              onOpenKaraoke={() => setKaraokeOpen(true)}
             />
             <div className="player-panel" key={`player-${song.title}::${song.artist}`}>
               <PlayerCard
@@ -157,6 +162,19 @@ export default function SearchTab({
           player={player}
           visible={true}
           onExpand={() => setPlayerCollapsed(false)}
+        />
+      )}
+
+      {/* Karaoke mode — full-screen stage view, independent of the
+          collapsed/expanded player state above */}
+      {karaokeOpen && song && (
+        <KaraokeView
+          song={song}
+          activeLyricIdx={activeLyricIdx}
+          isPlaying={isPlaying}
+          onSeek={seekTo}
+          onTogglePlay={togglePlay}
+          onClose={() => setKaraokeOpen(false)}
         />
       )}
 

@@ -4,7 +4,7 @@ export default function LyricsPanel({
   song, activeLyricIdx, introSecsRemaining,
   isPlaying, currentSec, lyricOffset, onSetLyricOffset,
   onSeek, isFav, onToggleFav, onOpenSpotify, onCopy,
-  onBackToResults,
+  onBackToResults, onOpenKaraoke,
 }) {
   const [fontSize, setFontSize] = useState(16);
   const [rippleIdx, setRippleIdx] = useState(null);
@@ -93,6 +93,11 @@ export default function LyricsPanel({
           <button className="btn-icon-sm" onClick={onCopy} title="Copy lyrics">
             <i className="ti ti-copy" />
           </button>
+          {onOpenKaraoke && (
+            <button className="btn-icon-sm" onClick={onOpenKaraoke} title="Karaoke mode">
+              <i className="ti ti-microphone-2" />
+            </button>
+          )}
         </div>
       </div>
 

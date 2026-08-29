@@ -206,6 +206,13 @@ export default function App() {
     showToast(wasF ? 'Removed from favourites' : '❤ Added to favourites');
   };
 
+  // Song identification hands off straight into the same search
+  // pipeline as typing a query — lyrics fetch, YouTube lookup,
+  // everything downstream already works, no new playback code needed.
+  const handleSongIdentified = ({ title, artist }) => {
+    handleSearch(artist ? `${title} - ${artist}` : title);
+  };
+
   // ── Play a favourited song ───────────────────────────────────────
   // Favourites only ever persist a title (see useFavorites). Built-in
   // songs come back from getAllSongs() with full lyrics already attached,
@@ -294,6 +301,7 @@ export default function App() {
               favorites={favorites}
               recentlyPlayed={recentlyPlayed}
               isActiveTab={activeTab === 'search'}
+              onSongIdentified={handleSongIdentified}
             />
           </div>
         </ErrorBoundary>

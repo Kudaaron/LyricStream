@@ -1,60 +1,81 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>LyricStream - Search Song Lyrics Instantly</title>
+    <title>LyricStream - Search Song Lyrics Instantly</title>
 
-  <meta
-    name="description"
-    content="Search song lyrics instantly with LyricStream. Find lyrics from thousands of songs quickly and easily."
-  />
+    <meta
+      name="description"
+      content="Search song lyrics instantly with LyricStream. Find lyrics from thousands of songs quickly and easily."
+    />
 
-  <meta
-    name="keywords"
-    content="lyrics, song lyrics, music, lyric search, LyricStream"
-  />
+    <meta
+      name="keywords"
+      content="lyrics, song lyrics, music, lyric search, LyricStream"
+    />
 
-  <meta name="robots" content="index, follow" />
-  <meta name="theme-color" content="#0ea5e9" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#0ea5e9" />
 
-  <link rel="canonical" href="https://lyric-stream-six.vercel.app/" />
+    <link rel="canonical" href="https://lyric-stream-six.vercel.app/" />
 
-  <!-- Open Graph — controls how links look when shared on WhatsApp,
+    <!-- Google Search Console verification -->
+    <!-- Replace CONTENT_VALUE with the code Search Console gives you under Settings > Ownership verification > HTML tag -->
+    <meta
+      name="google-site-verification"
+      content="F2Abe_zFks2_ICCrCWMa3znua-mk9GlE1_vpa9qObeE"
+    />
+
+    <!-- Open Graph — controls how links look when shared on WhatsApp,
        Discord, Facebook, iMessage, etc. -->
-  <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="LyricStream" />
-  <meta property="og:title" content="LyricStream - Search Song Lyrics Instantly" />
-  <meta
-    property="og:description"
-    content="Search song lyrics instantly with LyricStream. Find lyrics from thousands of songs quickly and easily."
-  />
-  <meta property="og:url" content="https://lyric-stream-six.vercel.app/" />
-  <meta property="og:image" content="https://lyric-stream-six.vercel.app/favicon.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="LyricStream" />
+    <meta
+      property="og:title"
+      content="LyricStream - Search Song Lyrics Instantly"
+    />
+    <meta
+      property="og:description"
+      content="Search song lyrics instantly with LyricStream. Find lyrics from thousands of songs quickly and easily."
+    />
+    <meta property="og:url" content="https://lyric-stream-six.vercel.app/" />
+    <meta
+      property="og:image"
+      content="https://lyric-stream-six.vercel.app/favicon.png"
+    />
 
-  <!-- Twitter/X Card -->
-  <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="LyricStream - Search Song Lyrics Instantly" />
-  <meta
-    name="twitter:description"
-    content="Search song lyrics instantly with LyricStream. Find lyrics from thousands of songs quickly and easily."
-  />
-  <meta name="twitter:image" content="https://lyric-stream-six.vercel.app/favicon.png" />
+    <!-- Twitter/X Card -->
+    <meta name="twitter:card" content="summary" />
+    <meta
+      name="twitter:title"
+      content="LyricStream - Search Song Lyrics Instantly"
+    />
+    <meta
+      name="twitter:description"
+      content="Search song lyrics instantly with LyricStream. Find lyrics from thousands of songs quickly and easily."
+    />
+    <meta
+      name="twitter:image"
+      content="https://lyric-stream-six.vercel.app/favicon.png"
+    />
 
-  <link rel="icon" href="/favicon.png" />
-  <link rel="apple-touch-icon" href="/favicon.png" />
+    <link rel="icon" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
 
-  <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css"
+    />
 
-  <script>
-    try {
-      var t = localStorage.getItem("ls_theme") || "light";
-      document.documentElement.setAttribute("data-theme", t);
-    } catch (e) {}
-  </script>
-</head>
+    <script>
+      try {
+        var t = localStorage.getItem("ls_theme") || "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+  </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
