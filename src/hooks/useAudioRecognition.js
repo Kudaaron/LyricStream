@@ -1,541 +1,492 @@
-import { useState, useRef, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const WORKER_BASE = import.meta.env.VITE_WORKER_URL;
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
-// Record 5 seconds.
-// We will extract a 4-second section for Shazam.
 const LISTEN_SECONDS = 10;
-
-const TARGET_SAMPLE_RATE = 44100;
-const TARGET_CHANNELS = 1;
 const SAMPLE_SECONDS = 4;
+const SAMPLE_RATE = 44100;
+
+let turnstileScriptPromise = null;
+
+function loadTurnstile() {
+  if (window.turnstile) return Promise.resolve(window.turnstile);
+  if (turnstileScriptPromise) return turnstileScriptPromise;
+
+  turnstileScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector(
+      'script[src*="challenges.cloudflare.com/turnstile"]',
+    );
+
+    if (existing) {
+      const check = setInterval(() => {
+        if (window.turnstile) {
+          clearInterval(check);
+          resolve(window.turnstile);
+        }
+      }, 50);
+
+      setTimeout(() => {
+        clearInterval(check);
+        if (!window.turnstile) {
+          reject(new Error("Turnstile failed to load."));
+        }
+      }, 15000);
+
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src =
+      "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+    script.async = true;
+    script.defer = true;
+
+    script.onload = () => {
+      const check = setInterval(() => {
+        if (window.turnstile) {
+          clearInterval(check);
+          resolve(window.turnstile);
+        }
+      }, 50);
+
+      setTimeout(() => {
+        clearInterval(check);
+        if (!window.turnstile) {
+          reject(new Error("Turnstile API unavailable."));
+        }
+      }, 10000);
+    };
+
+    script.onerror = () =>
+      reject(new Error("Could not load Cloudflare Turnstile."));
+
+    document.head.appendChild(script);
+  });
+
+  return turnstileScriptPromise;
+}
 
 export function useAudioRecognition() {
   const [status, setStatus] = useState("idle");
-
   const [error, setError] = useState(null);
-
   const [secondsLeft, setSecondsLeft] = useState(LISTEN_SECONDS);
 
   const mediaRecorderRef = useRef(null);
-
   const streamRef = useRef(null);
-
   const chunksRef = useRef([]);
-
   const timerRef = useRef(null);
-
-  // ─────────────────────────────────────────────
-  // Cleanup microphone
-  // ─────────────────────────────────────────────
+  const turnstileWidgetRef = useRef(null);
+  const turnstileContainerRef = useRef(null);
 
   const cleanupStream = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+  }, []);
 
-      streamRef.current = null;
+  const cleanupTurnstile = useCallback(() => {
+    if (turnstileWidgetRef.current && window.turnstile) {
+      try {
+        window.turnstile.remove(turnstileWidgetRef.current);
+      } catch {}
+    }
+
+    turnstileWidgetRef.current = null;
+
+    if (turnstileContainerRef.current) {
+      turnstileContainerRef.current.innerHTML = "";
     }
   }, []);
 
-  // ─────────────────────────────────────────────
-  // Reset
-  // ─────────────────────────────────────────────
+  useEffect(() => {
+    const container = document.createElement("div");
 
-  const reset = useCallback(() => {
-    clearInterval(timerRef.current);
+    container.style.position = "fixed";
+    container.style.left = "50%";
+    container.style.bottom = "90px";
+    container.style.transform = "translateX(-50%)";
+    container.style.width = "300px";
+    container.style.minHeight = "65px";
+    container.style.zIndex = "99999";
+    container.style.display = "flex";
+    container.style.justifyContent = "center";
+    container.style.alignItems = "center";
 
-    if (
-      mediaRecorderRef.current &&
-      mediaRecorderRef.current.state === "recording"
-    ) {
-      mediaRecorderRef.current.stop();
+    document.body.appendChild(container);
+    turnstileContainerRef.current = container;
+
+    return () => {
+      cleanupTurnstile();
+      container.remove();
+    };
+  }, [cleanupTurnstile]);
+
+  const getTurnstileToken = useCallback(async () => {
+    if (!TURNSTILE_SITE_KEY) {
+      throw new Error("Turnstile site key is not configured.");
     }
 
-    cleanupStream();
+    const turnstile = await loadTurnstile();
+    const container = turnstileContainerRef.current;
 
-    mediaRecorderRef.current = null;
-
-    chunksRef.current = [];
-
-    setStatus("idle");
-    setError(null);
-    setSecondsLeft(LISTEN_SECONDS);
-  }, [cleanupStream]);
-
-  // ─────────────────────────────────────────────
-  // Convert AudioBuffer to 44.1kHz mono
-  // ─────────────────────────────────────────────
-
-  const convertToMono44100 = async (audioBuffer) => {
-    const targetLength = Math.floor(audioBuffer.duration * TARGET_SAMPLE_RATE);
-
-    const offlineContext = new OfflineAudioContext(
-      TARGET_CHANNELS,
-      targetLength,
-      TARGET_SAMPLE_RATE,
-    );
-
-    const source = offlineContext.createBufferSource();
-
-    source.buffer = audioBuffer;
-
-    source.connect(offlineContext.destination);
-
-    source.start(0);
-
-    const renderedBuffer = await offlineContext.startRendering();
-
-    return renderedBuffer;
-  };
-
-  // ─────────────────────────────────────────────
-  // Convert Float32 PCM → signed 16-bit PCM
-  // ─────────────────────────────────────────────
-
-  const float32ToInt16 = (float32Array) => {
-    const int16Array = new Int16Array(float32Array.length);
-
-    for (let i = 0; i < float32Array.length; i++) {
-      let sample = float32Array[i];
-
-      // Clamp
-      sample = Math.max(-1, Math.min(1, sample));
-
-      // Convert to signed 16-bit PCM
-      if (sample < 0) {
-        int16Array[i] = sample * 0x8000;
-      } else {
-        int16Array[i] = sample * 0x7fff;
-      }
+    if (!container) {
+      throw new Error("Turnstile container unavailable.");
     }
 
-    return int16Array;
-  };
+    cleanupTurnstile();
 
-  // ─────────────────────────────────────────────
-  // Extract exactly 4 seconds
-  // ─────────────────────────────────────────────
+    return new Promise((resolve, reject) => {
+      let finished = false;
 
-  const extractFourSecondSample = (audioBuffer) => {
-    const availableSamples = audioBuffer.length;
+      const finish = (callback) => {
+        if (finished) return;
+        finished = true;
+        callback();
+      };
 
-    const requiredSamples = TARGET_SAMPLE_RATE * SAMPLE_SECONDS;
+      const timeout = setTimeout(() => {
+        finish(() =>
+          reject(
+            new Error("Security verification took too long. Please try again."),
+          ),
+        );
+      }, 60000);
 
-    if (availableSamples < requiredSamples) {
-      throw new Error(
-        `Recording is too short. Need at least ${SAMPLE_SECONDS} seconds of audio.`,
-      );
-    }
+      const widgetId = turnstile.render(container, {
+        sitekey: TURNSTILE_SITE_KEY,
+        action: "recognize",
+        execution: "execute",
+        appearance: "interaction-only",
+        theme: "dark",
+        "response-field": false,
+        retry: "auto",
+        "retry-interval": 8000,
+        "refresh-expired": "auto",
+        "refresh-timeout": "auto",
 
-    // Take the middle 4 seconds.
-    //
-    // Example:
-    // 5-second recording
-    // ↓
-    // remove 0.5 sec from beginning
-    // remove 0.5 sec from end
-    // ↓
-    // 4-second sample
+        callback: (token) => {
+          clearTimeout(timeout);
+          cleanupTurnstile();
+          finish(() => resolve(token));
+        },
 
-    const start = Math.floor((availableSamples - requiredSamples) / 2);
+        "error-callback": (code) => {
+          clearTimeout(timeout);
+          cleanupTurnstile();
 
-    const channelData = audioBuffer
-      .getChannelData(0)
-      .slice(start, start + requiredSamples);
+          finish(() =>
+            reject(
+              new Error(
+                `Security verification failed${
+                  code ? ` (${code})` : ""
+                }. Please try again.`,
+              ),
+            ),
+          );
 
-    return channelData;
-  };
+          return true;
+        },
 
-  // ─────────────────────────────────────────────
-  // Create raw PCM ArrayBuffer
-  // ─────────────────────────────────────────────
+        "expired-callback": () => {
+          clearTimeout(timeout);
+          cleanupTurnstile();
 
-  const createPCMBuffer = (float32Samples) => {
-    const int16Samples = float32ToInt16(float32Samples);
+          finish(() =>
+            reject(
+              new Error("Security verification expired. Please try again."),
+            ),
+          );
+        },
 
-    return int16Samples.buffer;
-  };
+        "unsupported-callback": () => {
+          clearTimeout(timeout);
+          cleanupTurnstile();
 
-  // ─────────────────────────────────────────────
-  // Decode recorded WebM/MP4/OGG
-  // ─────────────────────────────────────────────
+          finish(() =>
+            reject(
+              new Error("This browser does not support security verification."),
+            ),
+          );
+        },
+      });
 
-  const decodeRecordedAudio = async (blob) => {
-    const arrayBuffer = await blob.arrayBuffer();
+      turnstileWidgetRef.current = widgetId;
+      turnstile.execute(widgetId);
+    });
+  }, [cleanupTurnstile]);
 
+  const decodeAudio = async (blob) => {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 
     if (!AudioContextClass) {
-      throw new Error("Web Audio API is not supported by this browser.");
+      throw new Error("Web Audio API is not supported.");
     }
 
-    const audioContext = new AudioContextClass();
+    const context = new AudioContextClass();
 
     try {
-      const decoded = await audioContext.decodeAudioData(arrayBuffer.slice(0));
-
-      return decoded;
+      return await context.decodeAudioData(await blob.arrayBuffer());
     } finally {
-      await audioContext.close();
+      await context.close();
     }
   };
 
-  // ─────────────────────────────────────────────
-  // Send PCM to Worker
-  // ─────────────────────────────────────────────
+  const normalizeAudio = async (audioBuffer) => {
+    const length = Math.floor(audioBuffer.duration * SAMPLE_RATE);
 
-  const sendToWorker = async (pcmBuffer) => {
-    console.log("Sending PCM bytes:", pcmBuffer.byteLength);
+    const context = new OfflineAudioContext(1, length, SAMPLE_RATE);
 
-    const res = await fetch(`${WORKER_BASE}/recognize`, {
+    const source = context.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(context.destination);
+    source.start(0);
+
+    return context.startRendering();
+  };
+
+  const createPCM = (audioBuffer) => {
+    const requiredSamples = SAMPLE_RATE * SAMPLE_SECONDS;
+
+    if (audioBuffer.length < requiredSamples) {
+      throw new Error(
+        "Recording is too short. Please record for at least 4 seconds.",
+      );
+    }
+
+    const start = Math.floor((audioBuffer.length - requiredSamples) / 2);
+
+    const samples = audioBuffer
+      .getChannelData(0)
+      .slice(start, start + requiredSamples);
+
+    const pcm = new Int16Array(samples.length);
+
+    for (let i = 0; i < samples.length; i++) {
+      const sample = Math.max(-1, Math.min(1, samples[i]));
+      pcm[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+    }
+
+    return pcm.buffer;
+  };
+
+  const sendToWorker = async (pcm, token) => {
+    if (!WORKER_BASE) {
+      throw new Error("VITE_WORKER_URL is not configured.");
+    }
+
+    const response = await fetch(`${WORKER_BASE}/recognize`, {
       method: "POST",
-
       headers: {
         "Content-Type": "audio/pcm",
-
-        "X-Audio-Sample-Rate": String(TARGET_SAMPLE_RATE),
-
-        "X-Audio-Channels": String(TARGET_CHANNELS),
-
+        "X-Audio-Sample-Rate": String(SAMPLE_RATE),
+        "X-Audio-Channels": "1",
         "X-Audio-Bits": "16",
+        "X-Turnstile-Token": token,
       },
-
-      body: pcmBuffer,
+      body: pcm,
     });
 
-    const responseText = await res.text();
+    const text = await response.text();
 
     let data;
 
     try {
-      data = JSON.parse(responseText);
+      data = JSON.parse(text);
     } catch {
-      throw new Error(
-        `Worker returned invalid JSON: ${responseText.slice(0, 300)}`,
-      );
+      throw new Error("Recognition service returned invalid data.");
     }
 
-    if (!res.ok) {
-      throw new Error(data.error || "Song recognition request failed.");
+    if (!response.ok) {
+      throw new Error(data.error || "Song recognition failed.");
     }
 
     return data;
   };
 
-  // ─────────────────────────────────────────────
-  // Listen
-  // ─────────────────────────────────────────────
+  const reset = useCallback(() => {
+    clearInterval(timerRef.current);
+
+    if (mediaRecorderRef.current?.state === "recording") {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {}
+    }
+
+    cleanupStream();
+    cleanupTurnstile();
+
+    mediaRecorderRef.current = null;
+    chunksRef.current = [];
+
+    setStatus("idle");
+    setError(null);
+    setSecondsLeft(LISTEN_SECONDS);
+  }, [cleanupStream, cleanupTurnstile]);
 
   const listen = useCallback(
     async (onIdentified) => {
       clearInterval(timerRef.current);
-
       setError(null);
-
-      setStatus("listening");
-
       setSecondsLeft(LISTEN_SECONDS);
-
       chunksRef.current = [];
 
-      // ───────────────────────────────────────
-      // Get microphone
-      // ───────────────────────────────────────
-
-      let stream;
-
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            channelCount: 1,
+        setStatus("verifying");
 
-            echoCancellation: false,
+        const turnstileToken = await getTurnstileToken();
 
-            noiseSuppression: false,
+        setStatus("listening");
 
-            autoGainControl: false,
-          },
-        });
-      } catch (err) {
-        console.error("Microphone error:", err);
-
-        setStatus("error");
-
-        setError(
-          "Microphone access was denied. Check your browser settings and try again.",
-        );
-
-        return;
-      }
-
-      streamRef.current = stream;
-
-      // ───────────────────────────────────────
-      // Select recording format
-      // ───────────────────────────────────────
-
-      const supportedTypes = [
-        "audio/webm;codecs=opus",
-        "audio/webm",
-        "audio/mp4",
-        "audio/ogg",
-      ];
-
-      const mimeType =
-        supportedTypes.find((type) => MediaRecorder.isTypeSupported(type)) ||
-        "";
-
-      let recorder;
-
-      try {
-        recorder = mimeType
-          ? new MediaRecorder(stream, {
-              mimeType,
-            })
-          : new MediaRecorder(stream);
-      } catch (err) {
-        cleanupStream();
-
-        setStatus("error");
-
-        setError("Your browser cannot create an audio recorder.");
-
-        return;
-      }
-
-      mediaRecorderRef.current = recorder;
-
-      // ───────────────────────────────────────
-      // Collect audio chunks
-      // ───────────────────────────────────────
-
-      recorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          chunksRef.current.push(event.data);
-        }
-      };
-
-      // ───────────────────────────────────────
-      // Recording stopped
-      // ───────────────────────────────────────
-
-      recorder.onstop = async () => {
-        clearInterval(timerRef.current);
-
-        cleanupStream();
-
-        setStatus("processing");
+        let stream;
 
         try {
-          // ───────────────────────────────────
-          // Build recorded WebM/MP4 blob
-          // ───────────────────────────────────
-
-          const blob = new Blob(chunksRef.current, {
-            type: recorder.mimeType || "audio/webm",
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              channelCount: 1,
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+            },
           });
-
-          console.log("Recorded blob:", {
-            type: blob.type,
-            size: blob.size,
-          });
-
-          if (blob.size === 0) {
-            throw new Error("The microphone recording was empty.");
-          }
-
-          // ───────────────────────────────────
-          // Decode WebM/MP4 → AudioBuffer
-          // ───────────────────────────────────
-
-          console.log("Decoding microphone audio...");
-
-          const decoded = await decodeRecordedAudio(blob);
-
-          console.log("Decoded audio:", {
-            duration: decoded.duration,
-
-            sampleRate: decoded.sampleRate,
-
-            channels: decoded.numberOfChannels,
-          });
-
-          // ───────────────────────────────────
-          // Resample → 44.1 kHz mono
-          // ───────────────────────────────────
-
-          console.log("Converting to 44.1kHz mono...");
-
-          const normalized = await convertToMono44100(decoded);
-
-          console.log("Normalized audio:", {
-            duration: normalized.duration,
-
-            sampleRate: normalized.sampleRate,
-
-            channels: normalized.numberOfChannels,
-          });
-
-          // ───────────────────────────────────
-          // Take exactly 4 seconds
-          // ───────────────────────────────────
-
-          const samples = extractFourSecondSample(normalized);
-
-          console.log("Selected sample:", {
-            seconds: samples.length / TARGET_SAMPLE_RATE,
-
-            samples: samples.length,
-          });
-
-          // ───────────────────────────────────
-          // Float32 → signed 16-bit PCM
-          // ───────────────────────────────────
-
-          const pcmBuffer = createPCMBuffer(samples);
-
-          console.log("PCM:", {
-            bytes: pcmBuffer.byteLength,
-
-            expectedBytes: TARGET_SAMPLE_RATE * SAMPLE_SECONDS * 2,
-          });
-
-          // Expected:
-          //
-          // 44,100 samples/sec
-          // × 4 seconds
-          // × 2 bytes/sample
-          //
-          // = 352,800 bytes
-          //
-          // This is comfortably below 500 KB.
-
-          // ───────────────────────────────────
-          // Send to Cloudflare Worker
-          // ───────────────────────────────────
-
-          const data = await sendToWorker(pcmBuffer);
-
-          console.log("Recognition response:", data);
-
-          // ───────────────────────────────────
-          // No match
-          // ───────────────────────────────────
-
-          if (!data.matched) {
-            setStatus("error");
-
-            setError(
-              "Couldn't identify that song. Try moving closer to the speaker and recording again.",
-            );
-
-            return;
-          }
-
-          // ───────────────────────────────────
-          // Match
-          // ───────────────────────────────────
-
-          setStatus("idle");
-
-          onIdentified({
-            title: data.title,
-
-            artist: data.artist,
-
-            album: data.album,
-
-            coverArt: data.coverArt,
-
-            spotifyUrl: data.spotifyUrl,
-          });
-        } catch (err) {
-          console.error("Audio recognition error:", err);
-
-          setStatus("error");
-
-          setError(err?.message || "Could not identify the song.");
-        } finally {
-          mediaRecorderRef.current = null;
-
-          chunksRef.current = [];
+        } catch {
+          throw new Error(
+            "Microphone access was denied. Check your browser settings and try again.",
+          );
         }
-      };
 
-      recorder.onerror = (event) => {
-        console.error("MediaRecorder error:", event);
+        streamRef.current = stream;
 
-        clearInterval(timerRef.current);
+        const mimeTypes = [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/mp4",
+          "audio/ogg",
+        ];
 
-        cleanupStream();
+        const mimeType = mimeTypes.find((type) =>
+          MediaRecorder.isTypeSupported(type),
+        );
 
-        setStatus("error");
+        const recorder = mimeType
+          ? new MediaRecorder(stream, { mimeType })
+          : new MediaRecorder(stream);
 
-        setError("An error occurred while recording audio.");
-      };
+        mediaRecorderRef.current = recorder;
 
-      // ───────────────────────────────────────
-      // Start recording
-      // ───────────────────────────────────────
+        recorder.ondataavailable = (event) => {
+          if (event.data?.size) {
+            chunksRef.current.push(event.data);
+          }
+        };
 
-      try {
-        recorder.start();
-      } catch (err) {
-        console.error("Could not start recorder:", err);
+        recorder.onerror = () => {
+          clearInterval(timerRef.current);
+          cleanupStream();
+          setStatus("error");
+          setError("An error occurred while recording audio.");
+        };
 
-        cleanupStream();
+        recorder.onstop = async () => {
+          clearInterval(timerRef.current);
+          cleanupStream();
+          setStatus("processing");
 
-        setStatus("error");
+          try {
+            const blob = new Blob(chunksRef.current, {
+              type: recorder.mimeType || "audio/webm",
+            });
 
-        setError("Could not start microphone recording.");
-
-        return;
-      }
-
-      // ───────────────────────────────────────
-      // Countdown
-      // ───────────────────────────────────────
-
-      timerRef.current = setInterval(() => {
-        setSecondsLeft((seconds) => {
-          if (seconds <= 1) {
-            clearInterval(timerRef.current);
-
-            if (
-              mediaRecorderRef.current &&
-              mediaRecorderRef.current.state === "recording"
-            ) {
-              mediaRecorderRef.current.stop();
+            if (!blob.size) {
+              throw new Error("The microphone recording was empty.");
             }
 
-            return 0;
+            const decoded = await decodeAudio(blob);
+            const normalized = await normalizeAudio(decoded);
+            const pcm = createPCM(normalized);
+
+            const data = await sendToWorker(pcm, turnstileToken);
+
+            if (!data.matched) {
+              setStatus("error");
+              setError(
+                "Couldn't identify that song. Try moving closer to the speaker and recording again.",
+              );
+              return;
+            }
+
+            setStatus("idle");
+            setError(null);
+
+            onIdentified({
+              title: data.title,
+              artist: data.artist,
+              album: data.album,
+              coverArt: data.coverArt,
+              coverArtHq: data.coverArtHq,
+              webUrl: data.webUrl,
+              previewUrl: data.previewUrl,
+              shazamId: data.shazamId,
+            });
+          } catch (err) {
+            setStatus("error");
+            setError(err?.message || "Could not identify the song.");
+          } finally {
+            mediaRecorderRef.current = null;
+            chunksRef.current = [];
           }
+        };
 
-          return seconds - 1;
-        });
-      }, 1000);
+        recorder.start();
+
+        timerRef.current = setInterval(() => {
+          setSecondsLeft((seconds) => {
+            if (seconds <= 1) {
+              clearInterval(timerRef.current);
+
+              if (mediaRecorderRef.current?.state === "recording") {
+                mediaRecorderRef.current.stop();
+              }
+
+              return 0;
+            }
+
+            return seconds - 1;
+          });
+        }, 1000);
+      } catch (err) {
+        cleanupStream();
+        cleanupTurnstile();
+
+        setStatus("error");
+        setError(
+          err?.message || "Security verification failed. Please try again.",
+        );
+      }
     },
-    [cleanupStream],
+    [cleanupStream, cleanupTurnstile, getTurnstileToken],
   );
-
-  // ─────────────────────────────────────────────
-  // Stop early
-  // ─────────────────────────────────────────────
 
   const stopEarly = useCallback(() => {
     clearInterval(timerRef.current);
 
-    if (
-      mediaRecorderRef.current &&
-      mediaRecorderRef.current.state === "recording"
-    ) {
+    if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
     }
   }, []);
 
-  // ─────────────────────────────────────────────
-  // Return hook
-  // ─────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      clearInterval(timerRef.current);
+      cleanupStream();
+      cleanupTurnstile();
+
+      if (mediaRecorderRef.current?.state === "recording") {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {}
+      }
+    };
+  }, [cleanupStream, cleanupTurnstile]);
 
   return {
     status,

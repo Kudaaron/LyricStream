@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useAudioRecognition } from '../hooks/useAudioRecognition';
 
 const QUICK_TAGS = [
   'Blinding Lights', 'Shape of You', 'Bohemian Rhapsody',
@@ -14,7 +15,7 @@ function useDebounce(fn, delay) {
   }, [fn, delay]);
 }
 
-export default function SearchBar({ onSearch, onArtistSearch, onFocusChange }) {
+export default function SearchBar({ onSearch, onArtistSearch, onYoutubeUrlSearch, onSongIdentified, onFocusChange }) {
   const [query, setQuery] = useState('');
   const [searchMode, setSearchMode] = useState('song');
   const [suggestions, setSuggestions] = useState([]);
@@ -25,9 +26,15 @@ export default function SearchBar({ onSearch, onArtistSearch, onFocusChange }) {
   const inputRef = useRef(null);
   const abortRef = useRef(null); // cancel in-flight requests
 
-  // Fetch suggestions from LRCLIB as user types
+  const {
+    status: idStatus, error: idError, secondsLeft: idSecondsLeft,
+    listen: idListen, stopEarly: idStopEarly, reset: idReset,
+  } = useAudioRecognition();
+
+  // Fetch suggestions from LRCLIB as user types — skipped entirely in
+  // YouTube-URL mode, since suggesting song titles makes no sense there.
   const fetchSuggestions = useCallback(async (val) => {
-    if (!val || val.length < 2) {
+    if (searchMode === 'youtube' || !val || val.length < 2) {
       setSuggestions([]); setOpen(false); setLoadingSuggestions(false);
       return;
     }
@@ -93,6 +100,7 @@ export default function SearchBar({ onSearch, onArtistSearch, onFocusChange }) {
     onFocusChange?.(false);
     if (abortRef.current) abortRef.current.abort();
     if (searchMode === 'artist') onArtistSearch(v);
+    else if (searchMode === 'youtube') onYoutubeUrlSearch(v);
     else onSearch(v);
   };
 
@@ -148,6 +156,27 @@ export default function SearchBar({ onSearch, onArtistSearch, onFocusChange }) {
     setSuggestions([]); setOpen(false); setActiveIdx(-1);
   }, [searchMode]);
 
+  // Identification and typed suggestions are mutually exclusive — close
+  // the suggestions list the moment listening/processing starts, so the
+  // two can never be visible (and overlapping) at the same time.
+  const handleMicClick = () => {
+    if (idStatus === 'listening') {
+      idStopEarly();
+      return;
+    }
+    if (idStatus === 'idle' || idStatus === 'error') {
+      setOpen(false);
+      idListen((result) => onSongIdentified?.(result));
+    }
+  };
+
+  const idPanelOpen = idStatus !== 'idle';
+  const placeholders = {
+    song: 'Song title or "Song - Artist"…',
+    artist: 'Artist name — e.g. "Ed Sheeran"',
+    youtube: 'Paste a YouTube video URL…',
+  };
+
   return (
     <div>
       {/* Mode toggle */}
@@ -164,26 +193,28 @@ export default function SearchBar({ onSearch, onArtistSearch, onFocusChange }) {
         >
           <i className="ti ti-microphone-2" /> By artist
         </button>
+        <button
+          className={`search-mode-btn${searchMode === 'youtube' ? ' active' : ''}`}
+          onClick={() => setSearchMode('youtube')}
+        >
+          <i className="ti ti-brand-youtube" /> YouTube link
+        </button>
       </div>
 
       <div className="search-bar-wrap" ref={wrapRef}>
         <div className="search-bar">
-          <i className={`ti ${searchMode === 'artist' ? 'ti-microphone-2' : 'ti-search'} search-icon`} />
+          <i className={`ti ${searchMode === 'artist' ? 'ti-microphone-2' : searchMode === 'youtube' ? 'ti-brand-youtube' : 'ti-search'} search-icon`} />
           <input
             ref={inputRef}
             type="text"
             value={query}
-            placeholder={
-              searchMode === 'artist'
-                ? 'Artist name — e.g. "Ed Sheeran"'
-                : 'Song title or "Song - Artist"…'
-            }
+            placeholder={placeholders[searchMode]}
             autoComplete="off"
             spellCheck="false"
             onChange={e => handleInput(e.target.value)}
             onKeyDown={handleKeyDown}
             onFocus={() => {
-              suggestions.length && setOpen(true);
+              suggestions.length && searchMode !== 'youtube' && setOpen(true);
               onFocusChange?.(true);
               // Belt-and-suspenders for cases where the player view
               // wasn't the reason the bar was out of view (e.g. desktop).
@@ -205,13 +236,57 @@ export default function SearchBar({ onSearch, onArtistSearch, onFocusChange }) {
           {/* Loading dot while fetching suggestions */}
           {loadingSuggestions && <span className="search-loading-dot" />}
 
+          {/* Song identification — now lives inline in the bar itself,
+              so it can never visually collide with the suggestions
+              dropdown below. Hidden entirely in YouTube-URL mode, since
+              "identify what's playing" doesn't apply there. */}
+          {searchMode !== 'youtube' && (
+            <button
+              className={`search-mic-btn ${idStatus === 'listening' ? 'listening' : ''} ${idStatus === 'verifying' || idStatus === 'processing' ? 'processing' : ''}`}
+              onClick={handleMicClick}
+              disabled={idStatus === 'verifying' || idStatus === 'processing'}
+              title={idStatus === 'listening' ? 'Stop listening' : 'Identify a song playing nearby'}
+              type="button"
+            >
+              {idStatus === 'listening' && (
+                <>
+                  <span className="search-mic-ring ring1" />
+                  <span className="search-mic-ring ring2" />
+                </>
+              )}
+              <i className={`ti ${idStatus === 'verifying' || idStatus === 'processing' ? 'ti-loader-2 spin' : 'ti-microphone'}`} />
+            </button>
+          )}
+
           <button className="btn-primary" onClick={() => submit()}>
-            {searchMode === 'artist' ? 'Find songs' : 'Search'}
+            {searchMode === 'artist' ? 'Find songs' : searchMode === 'youtube' ? 'Fetch' : 'Search'}
           </button>
         </div>
 
+        {/* Identification status panel — replaces the suggestions
+            dropdown while listening/processing/error, never shown
+            alongside it. */}
+        {idPanelOpen && (
+          <div className="suggestions-dropdown id-status-panel">
+            <div className="id-status-icon">
+              <i className={`ti ${idStatus === 'error' ? 'ti-alert-triangle' : idStatus === 'verifying' ? 'ti-shield-check' : 'ti-microphone'}`} />
+            </div>
+            <p className="id-status-text">
+              {idStatus === 'verifying' && "Verifying you're human…"}
+              {idStatus === 'listening' && `Listening… ${idSecondsLeft}s`}
+              {idStatus === 'processing' && 'Identifying song…'}
+              {idStatus === 'error' && idError}
+            </p>
+            {idStatus === 'error' && (
+              <button className="song-id-retry" onClick={idReset}>
+                <i className="ti ti-refresh" /> Try again
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Autocomplete dropdown */}
-        {open && suggestions.length > 0 && (
+        {!idPanelOpen && open && suggestions.length > 0 && (
           <div className="suggestions-dropdown">
             <div className="suggestion-group-label">
               <i className="ti ti-world" /> From LRCLIB
@@ -245,18 +320,18 @@ export default function SearchBar({ onSearch, onArtistSearch, onFocusChange }) {
       </div>
 
       <div style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center', marginTop: 8 }}>
-        {searchMode === 'artist'
-          ? 'Browse all songs by an artist and pick one'
-          : <>Suggestions from LRCLIB as you type</>}
+        {searchMode === 'artist' && 'Browse all songs by an artist and pick one'}
+        {searchMode === 'song' && 'Suggestions from LRCLIB as you type'}
+        {searchMode === 'youtube' && "For songs our search can't find on YouTube — we'll fetch lyrics from LRCLIB separately"}
       </div>
 
-      {searchMode === 'song' && (
+      {/* {searchMode === 'song' && (
         <div className="quick-tags">
           {QUICK_TAGS.map(tag => (
             <span key={tag} className="tag" onClick={() => submit(tag)}>{tag}</span>
           ))}
         </div>
-      )}
+      )} */}
     </div>
   );
 }

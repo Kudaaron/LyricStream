@@ -6,6 +6,7 @@ import SearchTab from './components/SearchTab';
 import Toast from './components/Toast';
 import MiniPlayerBar from './components/MiniPlayerBar';
 import Footer from './components/Footer';
+import CreditBadge from './components/CreditBadge';
 import ErrorBoundary from './components/ErrorBoundary';
 
 // Lazy-loaded: About is rarely the first thing anyone opens, so it
@@ -23,6 +24,7 @@ import {
   searchLRCLibByArtist, searchLRCLibFuzzy,
   resolvePickedSong
 } from './api/lrclib';
+import { extractVideoIdFromUrl } from './api/youtube';
 
 import './styles/main.css';
 
@@ -144,6 +146,58 @@ export default function App() {
     });
   };
 
+  // ── Search by pasted YouTube URL ──────────────────────────────────
+  // For songs the app's own YouTube search can't find on its own — the
+  // person supplies the exact video directly. We use YouTube's public
+  // oEmbed endpoint (free, no key) to guess a title/artist from the
+  // video, search LRCLIB for matching lyrics using that guess, then
+  // force playback onto the exact pasted video regardless of what any
+  // internal search would have matched.
+  const handleYoutubeUrlSearch = async (url) => {
+    const videoId = extractVideoIdFromUrl(url);
+    if (!videoId) {
+      showToast('Could not find a video ID in that URL.');
+      return;
+    }
+
+    setPickerResults(null);
+    setLoading(true);
+    setLoadingMsg('Fetching video info…');
+    player.loadSong(null);
+
+    try {
+      const oembedRes = await fetch(
+        `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`
+      );
+      if (!oembedRes.ok) throw new Error('oEmbed failed');
+      const oembedData = await oembedRes.json();
+      const guessedTitle = oembedData.title || '';
+      const guessedArtist = oembedData.author_name || '';
+
+      setLoadingMsg('Searching lyrics database…');
+      let results = await searchLRCLib(guessedTitle);
+      if (!results.length) results = await searchLRCLibFuzzy(guessedTitle, guessedArtist);
+
+      let result = null;
+      if (results.length > 0) {
+        result = await resolvePickedSong(results[0]);
+      }
+
+      if (result?.lyrics?.length > 0) {
+        await player.loadSong({ ...result, genre: '', year: '', spotify: null });
+      } else {
+        showNoLyricsFound(guessedTitle || 'Unknown title', guessedArtist);
+      }
+      // Force playback onto the exact video that was pasted, overriding
+      // whatever (if anything) the app's own YouTube search concluded.
+      player.manualSetVideoId(videoId);
+    } catch {
+      showToast('Could not fetch info for that video. Check the URL and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCopy = () => {
     if (!player.song) return;
     const text = player.song.lyrics.map(l => l.l).join('\n');
@@ -258,6 +312,7 @@ export default function App() {
 
   return (
     <>
+      <CreditBadge />
       <Navbar
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -302,6 +357,7 @@ export default function App() {
               recentlyPlayed={recentlyPlayed}
               isActiveTab={activeTab === 'search'}
               onSongIdentified={handleSongIdentified}
+              onYoutubeUrlSearch={handleYoutubeUrlSearch}
             />
           </div>
         </ErrorBoundary>

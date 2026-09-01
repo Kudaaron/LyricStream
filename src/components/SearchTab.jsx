@@ -5,14 +5,13 @@ import PlayerCard from './PlayerCard';
 import SongCard from './SongCard';
 import SongPicker from './SongPicker';
 import MiniPlayerBar from './MiniPlayerBar';
-import SongIdentifier from './SongIdentifier';
 import KaraokeView from './KaraokeView';
 
 export default function SearchTab({
   player, loading, loadingMsg, onSearch, onArtistSearch,
   pickerResults, pickerQuery, onPickSong, onCancelPicker, onBackToResults,
   isFav, onToggleFav, onCopy, onOpenSpotify,
-  favorites, recentlyPlayed, isActiveTab, onSongIdentified,
+  favorites, recentlyPlayed, isActiveTab, onSongIdentified, onYoutubeUrlSearch,
 }) {
   const {
     song, isPlaying, currentSec, duration, progress,
@@ -74,8 +73,13 @@ export default function SearchTab({
       <div className="search-hero">
         <h1 className="hero-title">Find lyrics for any song</h1>
         <p className="hero-sub">Powered by LRCLIB · Free · No API key needed</p>
-        <SearchBar onSearch={onSearch} onArtistSearch={onArtistSearch} onFocusChange={setPlayerCollapsed} />
-        <SongIdentifier onIdentified={onSongIdentified} />
+        <SearchBar
+          onSearch={onSearch}
+          onArtistSearch={onArtistSearch}
+          onYoutubeUrlSearch={onYoutubeUrlSearch}
+          onSongIdentified={onSongIdentified}
+          onFocusChange={setPlayerCollapsed}
+        />
       </div>
 
       {/* Loading */}
@@ -178,15 +182,18 @@ export default function SearchTab({
         />
       )}
 
-      {/* Recently played */}
-      {!pickerResults && recentlyPlayed.length > 0 && (
+      {/* Recently played / Favourites — hidden while the search bar
+          is actively focused (dropdown or mic panel open), since both
+          grids sit directly behind the dropdown and showed through
+          around its edges otherwise. Reappear the moment focus clears. */}
+      {!playerCollapsed && !pickerResults && recentlyPlayed.length > 0 && (
         <div className="fav-section">
           <h3 className="section-heading">
             <i className="ti ti-history" style={{ color: 'var(--accent)' }} />
             Recently played
           </h3>
           <div className="results-grid">
-            {recentlyPlayed.map(s => (
+            {recentlyPlayed.slice(0, 5).map(s => (
               <SongCard key={s.title} song={s} onClick={handleCardPlay} />
             ))}
           </div>
@@ -194,7 +201,7 @@ export default function SearchTab({
       )}
 
       {/* Favourites */}
-      {!pickerResults && favSongs.length > 0 && (
+      {!playerCollapsed && !pickerResults && favSongs.length > 0 && (
         <div className="fav-section">
           <h3 className="section-heading">
             <i className="ti ti-heart-filled" style={{ color: '#EF4444' }} />
