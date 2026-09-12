@@ -1,307 +1,261 @@
 const WORKER_URL = import.meta.env.VITE_WORKER_URL;
 
-// ── Hardcoded verified IDs (instant, no network) ────────────────────────────
-const KNOWN_IDS = {
-  "shape of you ed sheeran": "JGwWNGJdvx8",
-  "perfect ed sheeran": "2Vv-BfVoq4g",
-  "thinking out loud ed sheeran": "lp-EO5I60KA",
-  "photograph ed sheeran": "nSDgHBa_B7Y",
-  "castle on the hill ed sheeran": "jGflUbPQfW8",
-  "bad habits ed sheeran": "orJSJGHjBLI",
-  "shivers ed sheeran": "Il4cOEBCvpk",
-  "blinding lights the weeknd": "XXYlFuWEuKI",
-  "save your tears the weeknd": "LIIDh-qI9oI",
-  "starboy the weeknd": "dqrVPZZPCHk",
-  "call out my name the weeknd": "vV9KRQO-oF4",
-  "levitating dua lipa": "TlV5sOwP5e0",
-  "dont start now dua lipa": "oygrmJFjeYg",
-  "physical dua lipa": "EzjHskLOSmA",
-  "future nostalgia dua lipa": "hrBM02ZUGMU",
-  "watermelon sugar harry styles": "E07s5ZYygMg",
-  "as it was harry styles": "H5v3kku4y6Q",
-  "adore you harry styles": "VF-r5TtlT9w",
-  "sign of the times harry styles": "qN4ooNx77u0",
-  "flowers miley cyrus": "G7KNmW9a75Y",
-  "wrecking ball miley cyrus": "My2FRPA3Gf8",
-  "anti-hero taylor swift": "b1kbLwvqugk",
-  "shake it off taylor swift": "nfWlot6h_JM",
-  "blank space taylor swift": "e-ORhEE9VVg",
-  "love story taylor swift": "8xg3vE8Ie_E",
-  "cruel summer taylor swift": "ic8j13piAhQ",
-  "cardigan taylor swift": "K-a8s8OLBSE",
-  "drivers license olivia rodrigo": "ZmDBbnmKpqQ",
-  "good 4 u olivia rodrigo": "gNi_6U5Pm_o",
-  "brutal olivia rodrigo": "gkRaLpFAeZ0",
-  "traitor olivia rodrigo": "4Jbkb68r50s",
-  "bad guy billie eilish": "DyDfgMOUjCI",
-  "happier than ever billie eilish": "5GJWxDKyk3A",
-  "lovely billie eilish": "NGSBJMmB4-g",
-  "gods plan drake": "xpVfcZ0ZcFM",
-  "one dance drake": "qL5v3LNgjAo",
-  "hotline bling drake": "uxpDa-c-4Mc",
-  "in my feelings drake": "gkOAhfxoabA",
-  "sorry justin bieber": "fRh_vgS2dFE",
-  "love yourself justin bieber": "oyEuk8j8imI",
-  "peaches justin bieber": "tQ0yjYMDFf0",
-  "stay the kid laroi": "ambAHGiyaFk",
-  "thank u next ariana grande": "gl1aHhXnN1k",
-  "7 rings ariana grande": "QYh6mYIJG2Y",
-  "positions ariana grande": "tcYodQoapMg",
-  "dynamite bts": "gdZLi9oWNZg",
-  "butter bts": "WMweEpGlu_U",
-  "boy with luv bts": "XsX3ATc3FbA",
-  "bohemian rhapsody queen": "fJ9rUzIMcZQ",
-  "dont stop me now queen": "HgzGwKwLmgM",
-  "somebody to love queen": "kijpcUv-b8M",
-  "heat waves glass animals": "mRD0-GxqHVo",
-  "montero lil nas x": "6swmTBVI83k",
-  "old town road lil nas x": "r7qovpFAGrQ",
-  "believer imagine dragons": "7wtfhZwyrcc",
-  "thunder imagine dragons": "fKopy74weus",
-  "radioactive imagine dragons": "ktvTqknDobU",
-  "demons imagine dragons": "mWRsgZuwf_8",
-  "sunflower post malone": "ApXoWvfEYVU",
-  "circles post malone": "wXhTHyIgQ_U",
-  "rockstar post malone": "UceaB4D0jpo",
-  "say so doja cat": "pok8J_QdX0Y",
-  "kiss me more doja cat": "0EVVKs6NiK0",
-  "without you the kid laroi": "BI0-XbU_yxI",
-};
+const CACHE_PREFIX = "lyricstream_yt_";
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
-const CACHE_KEY = "ls_yt_cache";
+function normalize(value = "") {
+  return value
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(
+      /\b(official|audio|video|lyrics|lyric|hd|hq|4k|visualizer|topic)\b/gi,
+      " ",
+    )
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-function getCache() {
+function tokens(value = "") {
+  return new Set(normalize(value).split(" ").filter(Boolean));
+}
+
+function similarity(a, b) {
+  const aa = tokens(a);
+  const bb = tokens(b);
+
+  if (!aa.size || !bb.size) return 0;
+
+  let matches = 0;
+
+  for (const word of aa) {
+    if (bb.has(word)) matches++;
+  }
+
+  return matches / Math.max(aa.size, bb.size);
+}
+
+function scoreResult(result, title, artist) {
+  const resultTitle = result.title || "";
+
+  const wantedTitle = normalize(title);
+  const wantedArtist = normalize(artist);
+  const actualTitle = normalize(resultTitle);
+
+  let score = 0;
+
+  if (wantedTitle && actualTitle === wantedTitle) {
+    score += 100;
+  } else {
+    score += similarity(title, resultTitle) * 70;
+  }
+
+  if (wantedArtist) {
+    const artistScore = similarity(artist, resultTitle);
+
+    if (artistScore > 0) {
+      score += artistScore * 30;
+    }
+
+    const titleAndArtist = normalize(`${title} ${artist}`);
+
+    if (actualTitle.includes(titleAndArtist)) {
+      score += 40;
+    }
+
+    if (
+      actualTitle.includes(wantedTitle) &&
+      actualTitle.includes(wantedArtist)
+    ) {
+      score += 50;
+    }
+  }
+
+  return score;
+}
+
+function getCache(key) {
   try {
-    return JSON.parse(localStorage.getItem(CACHE_KEY) || "{}");
+    const raw = localStorage.getItem(CACHE_PREFIX + key);
+
+    if (!raw) return null;
+
+    const cached = JSON.parse(raw);
+
+    if (Date.now() - cached.time > CACHE_TTL) {
+      localStorage.removeItem(CACHE_PREFIX + key);
+      return null;
+    }
+
+    return cached.data;
   } catch {
-    return {};
+    return null;
   }
 }
-function setCache(key, videoId) {
+
+function setCache(key, data) {
   try {
-    const c = getCache();
-    c[key] = videoId;
-    localStorage.setItem(CACHE_KEY, JSON.stringify(c));
+    localStorage.setItem(
+      CACHE_PREFIX + key,
+      JSON.stringify({
+        time: Date.now(),
+        data,
+      }),
+    );
   } catch {}
 }
-function makeKey(title, artist) {
-  return `${title} ${artist}`
-    .toLowerCase()
-    .trim()
-    .replace(/['']/g, "")
-    .replace(/\s+/g, " ");
+
+async function searchYouTube(query) {
+  if (!WORKER_URL) {
+    throw new Error("VITE_WORKER_URL is not configured.");
+  }
+
+  const baseUrl = WORKER_URL.endsWith("/search")
+    ? WORKER_URL
+    : `${WORKER_URL}/search`;
+
+  const cacheKey = query.trim().toLowerCase();
+
+  const cached = getCache(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
+  const url = `${baseUrl}?q=${encodeURIComponent(query)}`;
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`YouTube search failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  const results = Array.isArray(data?.results)
+    ? data.results.filter((r) => r?.videoId)
+    : [];
+
+  setCache(cacheKey, results);
+
+  return results;
 }
 
-// Fallback mirrors — used only if the Worker URL isn't configured or fails.
-// These are unreliable (CORS/SSL/DNS issues vary by instance and over time).
-const INVIDIOUS = [
-  "https://inv.nadeko.net",
-  "https://invidious.privacyredirect.com",
-  "https://iv.ggtyler.dev",
-];
-
-// ── Main export ────────────────────────────────────────────────────────────
-export async function fetchYouTubeVideoId(
+export async function fetchYouTubeVideo(
   title,
-  artist,
+  artist = "",
   confirmedExists = false,
 ) {
-  const key = makeKey(title, artist);
-
-  // 1. Hardcoded verified map
-  if (KNOWN_IDS[key]) return KNOWN_IDS[key];
-  const titleKey = title.toLowerCase().trim().replace(/['']/g, "");
-  const titleMatch = Object.entries(KNOWN_IDS).find(([k]) =>
-    k.startsWith(titleKey),
-  );
-  if (titleMatch) return titleMatch[1];
-
-  // 2. localStorage cache
-  const cache = getCache();
-  if (cache[key]) return cache[key];
-
   const queries = [
-    `${title} ${artist} official audio`,
-    `${title} ${artist} official video`,
-    `${artist} ${title}`,
-    `${title} ${artist}`,
-  ];
+    `${title} ${artist}`.trim(),
+    `"${title}" ${artist}`.trim(),
+    `${title}`.trim(),
+  ].filter(Boolean);
 
-  // 3. Cloudflare Worker — primary, reliable, no CORS issues (server-side fetch)
-  if (isWorkerConfigured()) {
-    for (const q of queries) {
-      const id = await searchViaWorker(q, title, artist, true);
-      if (id) {
-        setCache(key, id);
-        return id;
-      }
-    }
-    if (confirmedExists) {
-      for (const q of queries) {
-        const id = await searchViaWorker(q, title, artist, false);
-        if (id) {
-          setCache(key, id);
-          return id;
-        }
-      }
-    }
-  }
+  const allResults = [];
+  const seen = new Set();
 
-  // 4. Invidious fallback (best-effort, may fail due to CORS/cert issues)
-  const strictId = await raceInvidious(queries, title, artist, true);
-  if (strictId) {
-    setCache(key, strictId);
-    return strictId;
-  }
-
-  if (confirmedExists) {
-    const looseId = await raceInvidious(queries, title, artist, false);
-    if (looseId) {
-      setCache(key, looseId);
-      return looseId;
-    }
-  }
-
-  return null;
-}
-
-function isWorkerConfigured() {
-  return WORKER_URL && !WORKER_URL.includes("YOUR-WORKER-NAME");
-}
-
-// ── Cloudflare Worker search (primary, reliable) ───────────────────────────
-async function searchViaWorker(query, songTitle, artist, strict) {
-  try {
-    const res = await fetch(`${WORKER_URL}?q=${encodeURIComponent(query)}`, {
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const results = data?.results;
-    if (!Array.isArray(results) || !results.length) return null;
-
-    const candidates = results.filter(
-      (r) =>
-        !/(cover|reaction|remix|karaoke|instrumental|tutorial|live at|concert)/i.test(
-          r.title,
-        ),
-    );
-    if (!candidates.length) return null;
-
-    const goodMatch = candidates.find((r) =>
-      isGoodMatch(r.title, songTitle, artist),
-    );
-    if (goodMatch) return goodMatch.videoId;
-
-    if (!strict && candidates[0]) return candidates[0].videoId;
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-// ── Invidious fallback (best-effort) ────────────────────────────────────────
-async function raceInvidious(queries, title, artist, strict) {
-  const attempts = [];
   for (const query of queries) {
-    for (const instance of INVIDIOUS) {
-      attempts.push(searchInvidious(instance, query, title, artist, strict));
-    }
-  }
-  return new Promise((resolve) => {
-    let remaining = attempts.length;
-    let settled = false;
-    if (remaining === 0) {
-      resolve(null);
-      return;
-    }
+    try {
+      const results = await searchYouTube(query);
 
-    attempts.forEach((p) => {
-      p.then((result) => {
-        remaining--;
-        if (!settled && result) {
-          settled = true;
-          resolve(result);
-        } else if (!settled && remaining === 0) {
-          settled = true;
-          resolve(null);
-        }
-      }).catch(() => {
-        remaining--;
-        if (!settled && remaining === 0) {
-          settled = true;
-          resolve(null);
-        }
-      });
-    });
+      for (const result of results) {
+        if (!result.videoId || seen.has(result.videoId)) continue;
 
-    setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        resolve(null);
+        seen.add(result.videoId);
+        allResults.push(result);
       }
-    }, 5000);
-  });
+    } catch {
+      continue;
+    }
+
+    if (allResults.length >= 10) break;
+  }
+
+  if (!allResults.length) {
+    return null;
+  }
+
+  const ranked = allResults
+    .map((result) => ({
+      ...result,
+      score: scoreResult(result, title, artist),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const best = ranked[0];
+
+  if (!best) return null;
+
+  const minimumScore = confirmedExists ? 20 : 30;
+
+  if (best.score < minimumScore) {
+    return null;
+  }
+
+  return {
+    videoId: best.videoId,
+    title: best.title || title,
+    score: best.score,
+  };
 }
 
-async function searchInvidious(instance, query, songTitle, artist, strict) {
+export async function fetchYouTubeVideoId(
+  title,
+  artist = "",
+  confirmedExists = false,
+) {
+  const result = await fetchYouTubeVideo(title, artist, confirmedExists);
+
+  return result?.videoId || null;
+}
+
+export function extractVideoIdFromUrl(url) {
+  if (!url) return null;
+
   try {
-    const url = `${instance}/api/v1/search?q=${encodeURIComponent(query)}&type=video&fields=videoId,title&page=1`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!Array.isArray(data) || !data.length) return null;
+    const parsed = new URL(url);
 
-    const candidates = data.filter(
-      (r) =>
-        !/(cover|reaction|remix|karaoke|instrumental|tutorial|live at|concert)/i.test(
-          r.title,
-        ),
-    );
-    if (!candidates.length) return null;
+    if (parsed.hostname.includes("youtu.be")) {
+      return parsed.pathname.slice(1).split("/")[0] || null;
+    }
 
-    const goodMatch = candidates.find((r) =>
-      isGoodMatch(r.title, songTitle, artist),
-    );
-    if (goodMatch) return goodMatch.videoId;
+    if (
+      parsed.hostname.includes("youtube.com") ||
+      parsed.hostname.includes("youtube-nocookie.com")
+    ) {
+      const id = parsed.searchParams.get("v");
 
-    if (!strict && candidates[0]?.videoId) return candidates[0].videoId;
-    return null;
-  } catch {
-    return null;
-  }
+      if (id) return id;
+
+      const parts = parsed.pathname.split("/").filter(Boolean);
+
+      if (parts[0] === "shorts" && parts[1]) {
+        return parts[1];
+      }
+
+      if (parts[0] === "embed" && parts[1]) {
+        return parts[1];
+      }
+    }
+  } catch {}
+
+  const fallback = String(url).match(
+    /(?:v=|youtu\.be\/|shorts\/|embed\/)([A-Za-z0-9_-]{11})/,
+  );
+
+  return fallback?.[1] || null;
 }
 
-// ── Validate that a result actually matches the intended song ──────────────
-function isGoodMatch(videoTitle, songTitle, artist) {
-  if (!videoTitle) return false;
-  const vt = videoTitle.toLowerCase();
-  const st = songTitle.toLowerCase();
-  const ar = artist.toLowerCase();
+export function clearYouTubeCache() {
+  try {
+    const keys = Object.keys(localStorage);
 
-  const titleWords = st.split(" ").filter((w) => w.length > 2);
-  const artistWords = ar.split(" ").filter((w) => w.length > 2);
-
-  const titleMatch = titleWords.some((w) => vt.includes(w));
-  const artistMatch = artistWords.some((w) => vt.includes(w));
-
-  return titleMatch || artistMatch;
-}
-
-// ── Extract video ID from a pasted URL (manual override, still available) ──
-export function extractVideoIdFromUrl(input) {
-  if (!input) return null;
-  input = input.trim();
-  if (/^[A-Za-z0-9_-]{11}$/.test(input)) return input;
-  const patterns = [
-    /[?&]v=([A-Za-z0-9_-]{11})/,
-    /youtu\.be\/([A-Za-z0-9_-]{11})/,
-    /shorts\/([A-Za-z0-9_-]{11})/,
-    /embed\/([A-Za-z0-9_-]{11})/,
-  ];
-  for (const p of patterns) {
-    const m = input.match(p);
-    if (m) return m[1];
-  }
-  return null;
+    for (const key of keys) {
+      if (key.startsWith(CACHE_PREFIX)) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {}
 }

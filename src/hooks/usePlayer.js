@@ -1,11 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import { fetchYouTubeVideoId } from "../api/youtube";
 import { fetchItunesPreview } from "../api/itunes";
-
-// Modes:
-// 'youtube' — full song via YouTube IFrame (primary)
-// 'preview' — 30s iTunes AAC via <audio> (fallback)
-// 'sim'     — no audio, simulated timer (last resort)
 
 export function usePlayer({ onSongLoad } = {}) {
   const [song, setSong] = useState(null);
@@ -25,10 +19,6 @@ export function usePlayer({ onSongLoad } = {}) {
   const ytPlayerRef = useRef(null);
   const rafRef = useRef(null);
   const lyricOffsetRef = useRef(0);
-  // Set true at the start of every loadSong() call, consumed (and reset)
-  // by the next onYTReady. This is what stops a background iframe
-  // reconnect (e.g. after being hidden/shown on mobile) from forcing
-  // playback back to 0 — only an actual new song should do that.
   const isFreshLoadRef = useRef(false);
 
   const updateLyricOffset = useCallback((val) => {
@@ -36,111 +26,104 @@ export function usePlayer({ onSongLoad } = {}) {
     setLyricOffset(val);
   }, []);
 
-  // ── stop helpers ─────────────────────────────────────
   const stopSim = () => {
     clearInterval(simIntervalRef.current);
     simIntervalRef.current = null;
   };
+
   const stopAudio = () => {
-    const a = audioRef.current;
-    if (a) {
-      a.pause();
-      a.src = "";
+    const audio = audioRef.current;
+
+    if (audio) {
+      audio.pause();
+      audio.src = "";
     }
+
     cancelAnimationFrame(rafRef.current);
   };
+
   const stopAll = () => {
     stopSim();
     stopAudio();
     setIsPlaying(false);
   };
 
-  // ── load song ─────────────────────────────────────────
   const loadSong = useCallback(
     async (newSong) => {
       if (!newSong) {
+        stopAll();
         setSong(null);
         songRef.current = null;
+        setVideoId(null);
+        setMode("sim");
+        setLoading(false);
         return;
       }
 
       stopAll();
+
       setCurrentSec(0);
       setDuration(newSong.duration || 0);
-      setMode("sim");
-      setVideoId(null);
-      setLoading(true);
+      setMode(newSong.youtubeVideoId ? "youtube" : "sim");
+      setVideoId(newSong.youtubeVideoId || null);
+      setLoading(!!newSong.youtubeVideoId);
       updateLyricOffset(0);
+
       setSong(newSong);
       songRef.current = newSong;
       isFreshLoadRef.current = true;
 
-      // Record this as a "recently played" song — skipped for internal
-      // placeholder songs (e.g. the "no lyrics found" message) so the
-      // history only ever shows things the person actually looked up.
       if (onSongLoad && !newSong.isPlaceholder) {
         onSongLoad(newSong);
       }
 
-      // 1. YouTube full song
-      // If the song came with real lyric timestamps (e.g. from LRCLIB),
-      // that confirms the song genuinely exists, so we tell the YouTube
-      // lookup to try harder (looser matching) before giving up.
-      const confirmedExists =
-        newSong.lyrics?.length > 0 && newSong.duration > 0;
-      try {
-        const vid = await fetchYouTubeVideoId(
-          newSong.title,
-          newSong.artist,
-          confirmedExists,
-        );
-        if (vid) {
-          setVideoId(vid);
-          setMode("youtube");
-          setLoading(false);
-          return;
-        }
-      } catch {}
+      if (newSong.youtubeVideoId) {
+        setLoading(false);
+        return;
+      }
 
-      // 2. iTunes 30s preview fallback
       try {
         const prev = await fetchItunesPreview(newSong.title, newSong.artist);
+
         if (prev) {
           setMode("preview");
           setLoading(false);
+
           let audio = audioRef.current;
+
           if (!audio) {
             audio = new Audio();
             audio.preload = "auto";
             audioRef.current = audio;
           }
+
           audio.volume = volume / 100;
           audio.playbackRate = speed;
           audio.src = prev;
           audio.load();
+
           audio.onended = () => {
             setIsPlaying(false);
             cancelAnimationFrame(rafRef.current);
           };
+
           return;
         }
       } catch {}
 
-      // 3. Sim mode
       setMode("sim");
       setLoading(false);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     },
-    [volume, speed, onSongLoad],
+    [volume, speed, onSongLoad, updateLyricOffset],
   );
 
-  // ── YouTube player callbacks ──────────────────────────
   const onYTReady = useCallback(
     (ytPlayer) => {
       ytPlayerRef.current = ytPlayer;
       ytPlayer.setVolume(volume);
+
       if (isFreshLoadRef.current) {
-        ytPlayer.seekTo(0, true); // only on an actual new song load
+        ytPlayer.seekTo(0, true);
         isFreshLoadRef.current = false;
       }
     },
@@ -149,54 +132,64 @@ export function usePlayer({ onSongLoad } = {}) {
 
   const onYTTimeUpdate = useCallback((t) => {
     setCurrentSec(t);
+
     const dur =
       ytPlayerRef.current?.getDuration?.() || songRef.current?.duration || 0;
-    if (dur > 0) setDuration((d) => (d !== dur ? dur : d));
+
+    if (dur > 0) {
+      setDuration((old) => (old !== dur ? dur : old));
+    }
   }, []);
 
   const onYTStateChange = useCallback((state) => {
-    // 1=playing 2=paused 0=ended
     setIsPlaying(state === 1);
   }, []);
 
-  // ── audio RAF ────────────────────────────────────────
   const startRAF = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
+
     const tick = () => {
-      const a = audioRef.current;
-      if (a && !a.paused && !a.ended) {
-        setCurrentSec(a.currentTime);
+      const audio = audioRef.current;
+
+      if (audio && !audio.paused && !audio.ended) {
+        setCurrentSec(audio.currentTime);
         rafRef.current = requestAnimationFrame(tick);
       }
     };
+
     rafRef.current = requestAnimationFrame(tick);
   }, []);
 
   const startSim = useCallback(() => {
     stopSim();
+
     simIntervalRef.current = setInterval(() => {
       setCurrentSec((prev) => {
         const next = prev + (speed || 1);
         const dur = songRef.current?.duration || 0;
-        if (next >= dur) {
+
+        if (dur > 0 && next >= dur) {
           stopSim();
           setIsPlaying(false);
           return dur;
         }
+
         return next;
       });
     }, 1000);
   }, [speed]);
 
-  // ── play / pause ─────────────────────────────────────
   const play = useCallback(() => {
     if (!songRef.current) return;
+
     setIsPlaying(true);
+
     if (mode === "youtube") {
       ytPlayerRef.current?.playVideo();
     } else if (mode === "preview" && audioRef.current?.src) {
       audioRef.current.playbackRate = speed;
       audioRef.current.volume = volume / 100;
+
       audioRef.current
         .play()
         .then(() => startRAF())
@@ -211,25 +204,33 @@ export function usePlayer({ onSongLoad } = {}) {
 
   const pause = useCallback(() => {
     setIsPlaying(false);
-    if (mode === "youtube") ytPlayerRef.current?.pauseVideo();
-    else {
+
+    if (mode === "youtube") {
+      ytPlayerRef.current?.pauseVideo();
+    } else {
       stopAudio();
       stopSim();
     }
   }, [mode]);
 
   const togglePlay = useCallback(() => {
-    isPlaying ? pause() : play();
+    if (isPlaying) {
+      pause();
+    } else {
+      play();
+    }
   }, [isPlaying, play, pause]);
 
-  // ── seek ─────────────────────────────────────────────
   const seekTo = useCallback(
     (sec) => {
       const dur = duration || songRef.current?.duration || 0;
-      const t = Math.max(0, Math.min(dur, sec));
+      const t = dur > 0 ? Math.max(0, Math.min(dur, sec)) : Math.max(0, sec);
+
       setCurrentSec(t);
-      if (mode === "youtube") ytPlayerRef.current?.seekTo(t, true);
-      else if (mode === "preview" && audioRef.current?.src) {
+
+      if (mode === "youtube") {
+        ytPlayerRef.current?.seekTo(t, true);
+      } else if (mode === "preview" && audioRef.current?.src) {
         try {
           audioRef.current.currentTime = t;
         } catch {}
@@ -245,60 +246,78 @@ export function usePlayer({ onSongLoad } = {}) {
     [duration, seekTo],
   );
 
-  const restart = useCallback(() => seekTo(0), [seekTo]);
-  const skipForward = useCallback(
-    () => seekTo(currentSec + 10),
-    [seekTo, currentSec],
-  );
+  const restart = useCallback(() => {
+    seekTo(0);
+  }, [seekTo]);
 
-  // ── volume / speed ────────────────────────────────────
-  const setVolumeSynced = useCallback((v) => {
-    setVolume(v);
-    ytPlayerRef.current?.setVolume(v);
-    if (audioRef.current) audioRef.current.volume = v / 100;
+  const skipForward = useCallback(() => {
+    seekTo(currentSec + 10);
+  }, [seekTo, currentSec]);
+
+  const setVolumeSynced = useCallback((value) => {
+    setVolume(value);
+    ytPlayerRef.current?.setVolume(value);
+
+    if (audioRef.current) {
+      audioRef.current.volume = value / 100;
+    }
   }, []);
 
-  const setSpeedSynced = useCallback((s) => {
-    setSpeed(s);
-    ytPlayerRef.current?.setPlaybackRate(s);
-    if (audioRef.current) audioRef.current.playbackRate = s;
+  const setSpeedSynced = useCallback((value) => {
+    setSpeed(value);
+    ytPlayerRef.current?.setPlaybackRate(value);
+
+    if (audioRef.current) {
+      audioRef.current.playbackRate = value;
+    }
   }, []);
 
-  // ── manual override: user pastes their own YouTube URL ─
   const manualSetVideoId = useCallback((vid) => {
+    if (!vid) return;
+
     stopAll();
     setCurrentSec(0);
     setVideoId(vid);
     setMode("youtube");
     setLoading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    isFreshLoadRef.current = true;
   }, []);
 
-  // ── active lyric index (with offset) ─────────────────
-  // Returns -1 during intro (before first lyric timestamp is reached)
   const activeLyricIdx = (() => {
     const lyrics = songRef.current?.lyrics;
-    if (!lyrics || !lyrics.length) return -1;
-    const adj = currentSec + lyricOffset;
-    // If we haven't reached the first lyric yet, return -1 (intro state)
-    if (adj < lyrics[0].t) return -1;
-    let idx = 0;
-    for (let i = 0; i < lyrics.length; i++) {
-      if (adj >= lyrics[i].t) idx = i;
+
+    if (!lyrics?.length) return -1;
+
+    const adjusted = currentSec + lyricOffset;
+
+    if (adjusted < lyrics[0].t) {
+      return -1;
     }
-    return idx;
+
+    let index = 0;
+
+    for (let i = 0; i < lyrics.length; i++) {
+      if (adjusted >= lyrics[i].t) {
+        index = i;
+      }
+    }
+
+    return index;
   })();
 
-  // How many seconds until first lyric (for intro countdown)
   const introSecsRemaining = (() => {
     const lyrics = songRef.current?.lyrics;
-    if (!lyrics || !lyrics.length) return 0;
-    const firstT = lyrics[0].t;
-    const adj = currentSec + lyricOffset;
-    return adj < firstT ? Math.ceil(firstT - adj) : 0;
+
+    if (!lyrics?.length) return 0;
+
+    const firstTime = lyrics[0].t;
+    const adjusted = currentSec + lyricOffset;
+
+    return adjusted < firstTime ? Math.ceil(firstTime - adjusted) : 0;
   })();
 
   const effectiveDuration = duration || song?.duration || 0;
+
   const progress =
     effectiveDuration > 0
       ? Math.min(100, (currentSec / effectiveDuration) * 100)
