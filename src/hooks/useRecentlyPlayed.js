@@ -22,8 +22,10 @@ export function useRecentlyPlayed() {
   const [recentlyPlayed, setRecentlyPlayed] = useState(load);
 
   // Adds (or, if already present, moves to the front of) a song. Keeps
-  // the whole song object — title, artist, duration, lyrics — so
-  // replaying from this list is instant and never needs a re-fetch.
+  // the whole song object — including youtubeVideoId/youtubeTitle, not
+  // just title/artist/lyrics — so replaying from this list uses the
+  // exact same video instantly, instead of silently losing the video
+  // link and falling back to a 30-second iTunes preview.
   const add = useCallback((song) => {
     if (!song?.title) return;
     setRecentlyPlayed((prev) => {
@@ -36,6 +38,8 @@ export function useRecentlyPlayed() {
         genre: song.genre || "",
         year: song.year || "",
         spotify: song.spotify || null,
+        youtubeVideoId: song.youtubeVideoId || null,
+        youtubeTitle: song.youtubeTitle || "",
       };
       const next = [entry, ...withoutDupe].slice(0, MAX_ENTRIES);
       persist(next);

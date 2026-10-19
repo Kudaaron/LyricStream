@@ -113,35 +113,124 @@ function rankTracks(results, requestedTitle, requestedArtist) {
     .map((item) => item.track);
 }
 
-async function requestJson(url) {
-  const res = await fetch(url);
+// ------------------------------------------------------------------
+// LRCLIB health breaker.
+// The moment LRCLIB answers 429 / 5xx (or the browser blocks the response,
+// which is how a CORS-less 429 shows up), we mark it "down" for a while.
+// While it is down every call returns null / [] INSTANTLY with no network
+// request, so the app can hand over to Shazam without waiting or retrying.
+// ------------------------------------------------------------------
+const REQUEST_TIMEOUT_MS = 4000;
+let downUntil = 0;
+let failures = 0;
 
-  if (!res.ok) return null;
+export function isLRCLibDown() {
+  return Date.now() < downUntil;
+}
+
+// Lets the caller force one more LRCLIB attempt (e.g. when Shazam found nothing).
+export function resetLRCLibHealth() {
+  downUntil = 0;
+  failures = 0;
+}
+
+// A single 503 / timeout is usually one bad query, not an outage, so only
+// trip the breaker after 2 failures in a row. 429 is global, so trip at once.
+function recordFailure(ms) {
+  failures += 1;
+  if (failures >= 2) {
+    downUntil = Date.now() + ms;
+    failures = 0;
+  }
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// One HTTP attempt, classified so the caller knows what to do next.
+async function requestOnce(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    return await res.json();
+    const res = await fetch(url, { signal: controller.signal });
+
+    if (res.status === 429) {
+      return {
+        kind: "rate_limited",
+        retryAfter: Number(res.headers.get("Retry-After")),
+      };
+    }
+
+    if (res.status >= 500) return { kind: "retry" };
+
+    if (!res.ok) return { kind: "notfound" }; // 400 / 404: genuinely no match
+
+    try {
+      return { kind: "ok", data: await res.json() };
+    } catch {
+      return { kind: "notfound" };
+    }
   } catch {
+    // timeout, network error, or a 429 the browser blocked (no CORS headers)
+    return { kind: "retry" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function requestJson(url) {
+  if (isLRCLibDown()) return null;
+
+  let result = await requestOnce(url);
+
+  // A single 503 / timeout is usually momentary: retry that request once.
+  if (result.kind === "retry") {
+    await sleep(350);
+    result = await requestOnce(url);
+  }
+
+  if (result.kind === "ok") {
+    failures = 0;
+    return result.data;
+  }
+
+  if (result.kind === "notfound") {
+    failures = 0; // the server answered normally
     return null;
   }
+
+  if (result.kind === "rate_limited") {
+    const wait =
+      result.retryAfter > 0 ? Math.min(result.retryAfter, 10) * 1000 : 8000;
+    downUntil = Date.now() + wait;
+    failures = 0;
+    return null;
+  }
+
+  recordFailure(15000); // failed twice in a row: counts toward tripping the breaker
+  return null;
 }
 
 export async function fetchLRCLibLyrics(title, artist) {
   if (!title) return null;
 
   try {
-    const getUrl =
-      `${BASE}/get?artist_name=${encodeURIComponent(artist || "")}` +
-      `&track_name=${encodeURIComponent(title)}`;
+    // LRCLIB's /get needs an artist; without one it just answers 400.
+    if (artist) {
+      const getUrl =
+        `${BASE}/get?artist_name=${encodeURIComponent(artist)}` +
+        `&track_name=${encodeURIComponent(title)}`;
 
-    const getData = await requestJson(getUrl);
+      const getData = await requestJson(getUrl);
 
-    if (getData && isAcceptableTrack(getData, title, artist)) {
-      return trackToSong(getData, title, artist);
+      if (getData && isAcceptableTrack(getData, title, artist)) {
+        return trackToSong(getData, title, artist);
+      }
     }
 
     const searchUrl =
       `${BASE}/search?track_name=${encodeURIComponent(title)}` +
-      `&artist_name=${encodeURIComponent(artist || "")}`;
+      (artist ? `&artist_name=${encodeURIComponent(artist)}` : "");
 
     const searchData = await requestJson(searchUrl);
 
@@ -157,7 +246,7 @@ export async function fetchLRCLibLyrics(title, artist) {
 
     return best ? trackToSong(best, title, artist) : null;
   } catch (err) {
-    console.warn("LRCLIB fetch failed:", err.message);
+    debug.warn("LRCLIB fetch failed:", err.message);
     return null;
   }
 }
@@ -194,7 +283,7 @@ export async function searchLRCLib(query) {
 
     return [...seen.values()].slice(0, 20);
   } catch (err) {
-    console.warn("LRCLIB search failed:", err.message);
+    debug.warn("LRCLIB search failed:", err.message);
     return [];
   }
 }
@@ -236,12 +325,13 @@ export async function searchLRCLibFuzzy(title, artist) {
 
   const collected = [];
 
-  for (const query of attempts) {
-    const results = await searchLRCLib(query);
+  // Run the (max 3) variants in parallel instead of one after another.
+  const batches = await Promise.all(
+    attempts.slice(0, 3).map((query) => searchLRCLib(query)),
+  );
 
-    if (results.length) {
-      collected.push(...results);
-    }
+  for (const results of batches) {
+    if (results.length) collected.push(...results);
   }
 
   if (!collected.length) return [];

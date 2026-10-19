@@ -1,130 +1,120 @@
-import { useState, useRef, useCallback } from "react";
-import { fetchItunesPreview } from "../api/itunes";
+import { useState, useRef, useCallback, useEffect } from "react";
 
-export function usePlayer({ onSongLoad } = {}) {
+export function usePlayer({ onSongLoad, onEnded } = {}) {
   const [song, setSong] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentSec, setCurrentSec] = useState(0);
   const [duration, setDuration] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [volume, setVolume] = useState(80);
-  const [mode, setMode] = useState("sim");
+  const [mode, setMode] = useState("youtube");
   const [videoId, setVideoId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [lyricOffset, setLyricOffset] = useState(0);
 
-  const audioRef = useRef(null);
-  const simIntervalRef = useRef(null);
   const songRef = useRef(null);
   const ytPlayerRef = useRef(null);
-  const rafRef = useRef(null);
   const lyricOffsetRef = useRef(0);
   const isFreshLoadRef = useRef(false);
+  const hasHandledEndedRef = useRef(false);
+  const onEndedRef = useRef(onEnded);
+
+  useEffect(() => {
+    onEndedRef.current = onEnded;
+  }, [onEnded]);
 
   const updateLyricOffset = useCallback((val) => {
     lyricOffsetRef.current = val;
     setLyricOffset(val);
   }, []);
 
-  const stopSim = () => {
-    clearInterval(simIntervalRef.current);
-    simIntervalRef.current = null;
-  };
-
-  const stopAudio = () => {
-    const audio = audioRef.current;
-
-    if (audio) {
-      audio.pause();
-      audio.src = "";
+  const stopAll = useCallback(() => {
+    try {
+      ytPlayerRef.current?.pauseVideo();
+    } catch {
+      // The YouTube player may not be ready yet.
     }
 
-    cancelAnimationFrame(rafRef.current);
-  };
-
-  const stopAll = () => {
-    stopSim();
-    stopAudio();
     setIsPlaying(false);
-  };
+  }, []);
 
   const loadSong = useCallback(
     async (newSong) => {
+      stopAll();
+
       if (!newSong) {
-        stopAll();
         setSong(null);
         songRef.current = null;
         setVideoId(null);
-        setMode("sim");
+        setCurrentSec(0);
+        setDuration(0);
+        setMode("youtube");
         setLoading(false);
-        return;
+        isFreshLoadRef.current = false;
+        hasHandledEndedRef.current = false;
+        updateLyricOffset(0);
+        return false;
       }
 
-      stopAll();
+      const hasLyrics =
+        Array.isArray(newSong.lyrics) && newSong.lyrics.length > 0;
+
+      const hasVideo =
+        typeof newSong.youtubeVideoId === "string" &&
+        newSong.youtubeVideoId.trim().length > 0;
+
+      // Reject songs without both lyrics and a YouTube video.
+      if (!hasLyrics || !hasVideo || newSong.isPlaceholder) {
+        setSong(null);
+        songRef.current = null;
+        setVideoId(null);
+        setCurrentSec(0);
+        setDuration(0);
+        setMode("youtube");
+        setLoading(false);
+        isFreshLoadRef.current = false;
+        hasHandledEndedRef.current = false;
+        updateLyricOffset(0);
+        return false;
+      }
+
+      hasHandledEndedRef.current = false;
+      isFreshLoadRef.current = true;
 
       setCurrentSec(0);
       setDuration(newSong.duration || 0);
-      setMode(newSong.youtubeVideoId ? "youtube" : "sim");
-      setVideoId(newSong.youtubeVideoId || null);
-      setLoading(!!newSong.youtubeVideoId);
+      setMode("youtube");
+      setVideoId(newSong.youtubeVideoId);
+      setLoading(true);
       updateLyricOffset(0);
 
       setSong(newSong);
       songRef.current = newSong;
-      isFreshLoadRef.current = true;
 
-      if (onSongLoad && !newSong.isPlaceholder) {
+      if (onSongLoad) {
         onSongLoad(newSong);
       }
 
-      if (newSong.youtubeVideoId) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const prev = await fetchItunesPreview(newSong.title, newSong.artist);
-
-        if (prev) {
-          setMode("preview");
-          setLoading(false);
-
-          let audio = audioRef.current;
-
-          if (!audio) {
-            audio = new Audio();
-            audio.preload = "auto";
-            audioRef.current = audio;
-          }
-
-          audio.volume = volume / 100;
-          audio.playbackRate = speed;
-          audio.src = prev;
-          audio.load();
-
-          audio.onended = () => {
-            setIsPlaying(false);
-            cancelAnimationFrame(rafRef.current);
-          };
-
-          return;
-        }
-      } catch {}
-
-      setMode("sim");
-      setLoading(false);
+      return true;
     },
-    [volume, speed, onSongLoad, updateLyricOffset],
+    [onSongLoad, stopAll, updateLyricOffset],
   );
 
   const onYTReady = useCallback(
     (ytPlayer) => {
       ytPlayerRef.current = ytPlayer;
-      ytPlayer.setVolume(volume);
 
-      if (isFreshLoadRef.current) {
-        ytPlayer.seekTo(0, true);
-        isFreshLoadRef.current = false;
+      try {
+        ytPlayer.setVolume(volume);
+
+        if (isFreshLoadRef.current) {
+          ytPlayer.seekTo(0, true);
+          isFreshLoadRef.current = false;
+        }
+
+        setLoading(false);
+      } catch {
+        setLoading(false);
       }
     },
     [volume],
@@ -133,85 +123,57 @@ export function usePlayer({ onSongLoad } = {}) {
   const onYTTimeUpdate = useCallback((t) => {
     setCurrentSec(t);
 
-    const dur =
+    const actualDuration =
       ytPlayerRef.current?.getDuration?.() || songRef.current?.duration || 0;
 
-    if (dur > 0) {
-      setDuration((old) => (old !== dur ? dur : old));
+    if (actualDuration > 0) {
+      setDuration((old) => (old !== actualDuration ? actualDuration : old));
     }
   }, []);
 
   const onYTStateChange = useCallback((state) => {
+    // YouTube IFrame API: 0 = ended, 1 = playing, 2 = paused.
     setIsPlaying(state === 1);
+
+    if (state === 1) {
+      hasHandledEndedRef.current = false;
+      setLoading(false);
+    }
+
+    if (state === 0 && !hasHandledEndedRef.current) {
+      hasHandledEndedRef.current = true;
+      onEndedRef.current?.();
+    }
   }, []);
-
-  const startRAF = useCallback(() => {
-    cancelAnimationFrame(rafRef.current);
-
-    const tick = () => {
-      const audio = audioRef.current;
-
-      if (audio && !audio.paused && !audio.ended) {
-        setCurrentSec(audio.currentTime);
-        rafRef.current = requestAnimationFrame(tick);
-      }
-    };
-
-    rafRef.current = requestAnimationFrame(tick);
-  }, []);
-
-  const startSim = useCallback(() => {
-    stopSim();
-
-    simIntervalRef.current = setInterval(() => {
-      setCurrentSec((prev) => {
-        const next = prev + (speed || 1);
-        const dur = songRef.current?.duration || 0;
-
-        if (dur > 0 && next >= dur) {
-          stopSim();
-          setIsPlaying(false);
-          return dur;
-        }
-
-        return next;
-      });
-    }, 1000);
-  }, [speed]);
 
   const play = useCallback(() => {
-    if (!songRef.current) return;
+    const currentSong = songRef.current;
 
-    setIsPlaying(true);
-
-    if (mode === "youtube") {
-      ytPlayerRef.current?.playVideo();
-    } else if (mode === "preview" && audioRef.current?.src) {
-      audioRef.current.playbackRate = speed;
-      audioRef.current.volume = volume / 100;
-
-      audioRef.current
-        .play()
-        .then(() => startRAF())
-        .catch(() => {
-          setMode("sim");
-          startSim();
-        });
-    } else {
-      startSim();
+    if (
+      !currentSong?.youtubeVideoId ||
+      !Array.isArray(currentSong.lyrics) ||
+      currentSong.lyrics.length === 0
+    ) {
+      setIsPlaying(false);
+      return;
     }
-  }, [mode, speed, volume, startRAF, startSim]);
+
+    try {
+      ytPlayerRef.current?.playVideo();
+    } catch {
+      setIsPlaying(false);
+    }
+  }, []);
 
   const pause = useCallback(() => {
-    setIsPlaying(false);
-
-    if (mode === "youtube") {
+    try {
       ytPlayerRef.current?.pauseVideo();
-    } else {
-      stopAudio();
-      stopSim();
+    } catch {
+      // Player may not be ready.
     }
-  }, [mode]);
+
+    setIsPlaying(false);
+  }, []);
 
   const togglePlay = useCallback(() => {
     if (isPlaying) {
@@ -224,16 +186,18 @@ export function usePlayer({ onSongLoad } = {}) {
   const seekTo = useCallback(
     (sec) => {
       const dur = duration || songRef.current?.duration || 0;
-      const t = dur > 0 ? Math.max(0, Math.min(dur, sec)) : Math.max(0, sec);
 
-      setCurrentSec(t);
+      const target =
+        dur > 0 ? Math.max(0, Math.min(dur, sec)) : Math.max(0, sec);
+
+      setCurrentSec(target);
 
       if (mode === "youtube") {
-        ytPlayerRef.current?.seekTo(t, true);
-      } else if (mode === "preview" && audioRef.current?.src) {
         try {
-          audioRef.current.currentTime = t;
-        } catch {}
+          ytPlayerRef.current?.seekTo(target, true);
+        } catch {
+          // Player may not be ready.
+        }
       }
     },
     [mode, duration],
@@ -252,36 +216,53 @@ export function usePlayer({ onSongLoad } = {}) {
 
   const skipForward = useCallback(() => {
     seekTo(currentSec + 10);
-  }, [seekTo, currentSec]);
+  }, [currentSec, seekTo]);
 
   const setVolumeSynced = useCallback((value) => {
     setVolume(value);
-    ytPlayerRef.current?.setVolume(value);
 
-    if (audioRef.current) {
-      audioRef.current.volume = value / 100;
+    try {
+      ytPlayerRef.current?.setVolume(value);
+    } catch {
+      // Player may not be ready.
     }
   }, []);
 
   const setSpeedSynced = useCallback((value) => {
     setSpeed(value);
-    ytPlayerRef.current?.setPlaybackRate(value);
 
-    if (audioRef.current) {
-      audioRef.current.playbackRate = value;
+    try {
+      ytPlayerRef.current?.setPlaybackRate(value);
+    } catch {
+      // Player may not be ready.
     }
   }, []);
 
-  const manualSetVideoId = useCallback((vid) => {
-    if (!vid) return;
+  const manualSetVideoId = useCallback(
+    (vid) => {
+      if (!vid || !songRef.current?.lyrics?.length) {
+        return;
+      }
 
-    stopAll();
-    setCurrentSec(0);
-    setVideoId(vid);
-    setMode("youtube");
-    setLoading(false);
-    isFreshLoadRef.current = true;
-  }, []);
+      stopAll();
+
+      const updatedSong = {
+        ...songRef.current,
+        youtubeVideoId: vid,
+      };
+
+      songRef.current = updatedSong;
+      setSong(updatedSong);
+
+      setCurrentSec(0);
+      setVideoId(vid);
+      setMode("youtube");
+      setLoading(true);
+      isFreshLoadRef.current = true;
+      hasHandledEndedRef.current = false;
+    },
+    [stopAll],
+  );
 
   const activeLyricIdx = (() => {
     const lyrics = songRef.current?.lyrics;

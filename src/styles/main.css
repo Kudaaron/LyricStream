@@ -2895,6 +2895,187 @@ input {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   GENRE PICKER — autoplay preference
+   ═══════════════════════════════════════════════════════════════ */
+/* Compact autoplay / genre picker. Uses neutral translucent colours so it
+   works on both the dark and light themes. */
+.gp {
+  width: 100%;
+  margin: 0 0 14px;
+  border: 1px solid rgba(128, 160, 200, 0.22);
+  border-radius: 14px;
+  background: rgba(128, 160, 200, 0.07);
+  overflow: hidden;
+}
+
+.gp-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 4px;
+}
+
+.gp-summary {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+.gp-summary:hover {
+  background: rgba(128, 160, 200, 0.1);
+}
+
+.gp-disc {
+  font-size: 16px;
+  opacity: 0.7;
+}
+
+.gp-label {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.gp-current {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent, #38bdf8);
+}
+
+.gp-current--warn {
+  color: #f59e0b;
+}
+
+.gp-chevron {
+  font-size: 16px;
+  opacity: 0.6;
+}
+
+/* ---- on/off switch ---- */
+.gp-switch {
+  position: relative;
+  flex: none;
+  width: 42px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(128, 160, 200, 0.35);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.gp-switch--on {
+  background: linear-gradient(90deg, #2196f3, #6a6af4);
+}
+
+.gp-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+
+.gp-switch--on .gp-knob {
+  transform: translateX(18px);
+}
+
+/* ---- expanded panel ---- */
+.gp-panel {
+  padding: 4px 12px 12px;
+  border-top: 1px solid rgba(128, 160, 200, 0.16);
+}
+
+.gp-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.gp-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.gp-tab {
+  flex: none;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  opacity: 0.65;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.gp-tab:hover {
+  opacity: 1;
+}
+
+.gp-tab--active {
+  opacity: 1;
+  font-weight: 600;
+  background: rgba(56, 189, 248, 0.16);
+  color: var(--accent, #38bdf8);
+}
+
+.gp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.gp-chip {
+  padding: 6px 12px;
+  border: 1px solid rgba(128, 160, 200, 0.3);
+  border-radius: 999px;
+  background: rgba(128, 160, 200, 0.1);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.gp-chip:hover {
+  border-color: var(--accent, #38bdf8);
+}
+
+.gp-chip--active {
+  border-color: var(--accent, #38bdf8);
+  background: rgba(56, 189, 248, 0.18);
+  color: var(--accent, #38bdf8);
+  font-weight: 600;
+}
+/* ═══════════════════════════════════════════════════════════════
    MINI PLAYER BAR
    Fixed bar shown when a song is loaded but the person has navigated
    to Favourites or About — keeps playback reachable without losing
@@ -3012,6 +3193,103 @@ input {
   }
 }
 
+/* Skip css */
+/* ---- On top of the video (default) ---- */
+/* ===========================================================
+   Desktop (mouse): overlay on the video, visible only on hover
+   =========================================================== */
+.skip-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 11%;
+  pointer-events: none; /* never intercepts clicks meant for the video */
+}
+
+.skip-overlay .skip-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 20px;
+  opacity: 0;
+  pointer-events: none; /* hidden buttons can't be clicked either */
+  transition: opacity 0.18s ease;
+}
+
+.skip-overlay .skip-btn-label {
+  display: none;
+}
+
+/* Reveal while the pointer is over the video (or a button has keyboard focus). */
+.skip-host:hover > .skip-overlay .skip-btn,
+.skip-host:focus-within > .skip-overlay .skip-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ===========================================================
+   Touch: slim row under the video (never over it)
+   =========================================================== */
+.skip-row {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px 0 2px;
+}
+
+.skip-row .skip-btn {
+  height: 38px;
+  padding: 0 16px;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(128, 160, 200, 0.3);
+  background: rgba(128, 160, 200, 0.12);
+  color: inherit;
+  font-size: 14px;
+}
+
+/* ===========================================================
+   Shared
+   =========================================================== */
+.skip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition:
+    background 0.15s,
+    transform 0.1s,
+    opacity 0.18s;
+}
+
+.skip-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.skip-btn:disabled {
+  cursor: progress;
+}
+
+.skip-btn .spin {
+  animation: skip-spin 0.9s linear infinite;
+}
+
+@keyframes skip-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════
    ERROR BOUNDARY FALLBACK
    ═══════════════════════════════════════════════════════════════ */
@@ -3054,35 +3332,31 @@ input {
    ═══════════════════════════════════════════════════════════════ */
 .credit-badge {
   position: fixed;
-  bottom: 6px; /* Slightly more breathing room from the bottom */
+  bottom: 72px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 240;
-
-  /* Increased padding for a more balanced capsule shape */
-  padding: 6px 14px;
+  max-width: calc(100vw - 24px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 4px 12px;
   border-radius: 20px;
-  background: var(--surface2);
+  background: color-mix(in srgb, var(--surface2) 85%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--border);
-
-  /* Color improvements */
-  color: #a3b3cc; /* A brighter, cleaner slate-blue that pops on dark backgrounds */
-  opacity: 0.85; /* Increased from 0.7 for sharper clarity */
-
-  /* Size improvements */
-  font-size: 12px;
+  color: var(--text3);
+  font-size: 10px;
   font-weight: 500;
-
+  letter-spacing: 0.02em;
+  opacity: 0.8;
   pointer-events: none;
   white-space: nowrap;
-  transition: opacity 0.2s ease;
 }
-
 @media (max-width: 600px) {
   .credit-badge {
-    font-size: 10.5px;
-    padding: 5px 11px;
-    bottom: 4px;
+    font-size: 9px;
+    padding: 3px 10px;
   }
 }
 

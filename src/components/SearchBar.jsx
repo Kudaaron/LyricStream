@@ -15,7 +15,14 @@ function useDebounce(fn, delay) {
   }, [fn, delay]);
 }
 
-export default function SearchBar({ onSearch, onArtistSearch, onYoutubeUrlSearch, onSongIdentified, onFocusChange }) {
+export default function SearchBar({
+  onSearch,
+  onArtistSearch,
+  onYoutubeUrlSearch,
+  onSongIdentified,
+  onFocusChange,
+  onBeforeSearch,
+}) {
   const [query, setQuery] = useState('');
   const [searchMode, setSearchMode] = useState('song');
   const [suggestions, setSuggestions] = useState([]);
@@ -95,10 +102,17 @@ export default function SearchBar({ onSearch, onArtistSearch, onYoutubeUrlSearch
     const v = (q ?? query).trim();
     if (!v) return;
     setQuery(v);
+    setSuggestions([]);
     setOpen(false);
     setActiveIdx(-1);
     onFocusChange?.(false);
+
+    // Tell the parent to remove any old SongPicker before this
+    // search starts. This prevents multiple pickers from stacking.
+    onBeforeSearch?.();
+
     if (abortRef.current) abortRef.current.abort();
+
     if (searchMode === 'artist') onArtistSearch(v);
     else if (searchMode === 'youtube') onYoutubeUrlSearch(v);
     else onSearch(v);
@@ -226,7 +240,14 @@ export default function SearchBar({ onSearch, onArtistSearch, onYoutubeUrlSearch
           {query && (
             <button
               className="search-clear"
-              onClick={() => { setQuery(''); setSuggestions([]); setOpen(false); inputRef.current?.focus(); }}
+              onClick={() => {
+                if (abortRef.current) abortRef.current.abort();
+                setQuery('');
+                setSuggestions([]);
+                setOpen(false);
+                setActiveIdx(-1);
+                inputRef.current?.focus();
+              }}
               title="Clear"
             >
               <i className="ti ti-x" />

@@ -12,6 +12,7 @@ export default function SearchTab({
   pickerResults, pickerQuery, onPickSong, onCancelPicker, onBackToResults,
   isFav, onToggleFav, onCopy, onOpenSpotify,
   favorites, recentlyPlayed, isActiveTab, onSongIdentified, onYoutubeUrlSearch,
+  onPlayFromGrid,
 }) {
   const {
     song, isPlaying, currentSec, duration, progress,
@@ -42,6 +43,15 @@ export default function SearchTab({
   // previous panel before mounting the next — without it, both could
   // briefly end up rendered at once.
   const handleCardPlay = async (newSong) => {
+    // Prefer the parent handler so songs without a saved YouTube ID are
+    // resolved before playback. App.jsx reuses a stored ID when available
+    // and searches YouTube when an older entry does not have one.
+    if (onPlayFromGrid) {
+      await onPlayFromGrid(newSong);
+      return;
+    }
+
+    // Fallback for contexts where the parent handler is not supplied.
     await loadSong(null);
     await loadSong(newSong);
   };
