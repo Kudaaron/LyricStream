@@ -1,4 +1,16 @@
+import { debug } from "../utils/debug";
+
 const BASE = import.meta.env.VITE_LRCLIB_URL;
+
+// Safe autocomplete helper — call this from the search bar's debounced
+// handler. It goes through the same health-breaker as every other LRCLIB
+// call so repeated keystrokes can never cause a 429 storm.
+// Debounce on the call-site with at least 350 ms.
+export async function autocompleteLRCLib(query) {
+  if (!query || query.trim().length < 2) return [];
+  if (isLRCLibDown()) return [];
+  return searchLRCLib(query.trim());
+}
 
 function normalize(value = "") {
   return value

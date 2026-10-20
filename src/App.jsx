@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
 import { Analytics } from "@vercel/analytics/react";
 
 import Navbar from "./components/Navbar";
@@ -11,6 +11,15 @@ import CreditBadge from "./components/CreditBadge";
 import GenrePicker from "./components/GenrePicker";
 import SkipControls from "./components/SkipControls";
 import { GENRE_ARTISTS } from "./data/genreArtists";
+import { debug } from "./utils/debug";
+import { useWakeLock } from "./hooks/useWakeLock";
+import { useMediaSession } from "./hooks/useMediaSession";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { useQueue } from "./hooks/useQueue";
+import LyricCardModal from "./components/LyricCardModal";
+import QueuePanel from "./components/QueuePanel";
+import { shareSong, readShareParams } from "./utils/share";
+import "./styles/features.css";
 import ErrorBoundary from "./components/ErrorBoundary";
 
 const AboutTab = lazy(() => import("./components/AboutTab"));
@@ -853,51 +862,48 @@ export default function App() {
 
       const candidates = await fetchGenreCandidates(favoriteGenre, excludeTitles);
 
-      for (const candidate of candidates.slice(0, 30)) {
-        await sleep(400);
-        try {
-          // Search by the real title + artist (not the genre name) so the
-          // YouTube match isn't polluted.
-          const youtube = await fetchYouTubeVideo(
-            candidate.title,
-            candidate.artist,
-            true,
-          );
+      // Try candidates in parallel batches of 6.
+      // LRCLIB is queried directly here — no Shazam fallback for autoplay,
+      // since every failure would spend RapidAPI quota.
+      const BATCH = 6;
+      for (let ci = 0; ci < Math.min(candidates.length, 30); ci += BATCH) {
+        const batch = candidates.slice(ci, ci + BATCH);
 
-          if (!youtube?.videoId) continue;
-          if (titleLooksLikeWrongGenre(favoriteGenre, youtube.title || "", candidate.artist)) {
-            continue;
-          }
+        const settled = await Promise.allSettled(
+          batch.map(async (candidate) => {
+            const youtube = await fetchYouTubeVideo(candidate.title, candidate.artist, true);
+            if (!youtube?.videoId) return null;
+            if (titleLooksLikeWrongGenre(favoriteGenre, youtube.title || "", candidate.artist)) return null;
 
-          const result = await getLyricsForSong(
-            candidate.title,
-            candidate.artist,
-            youtube.title || "",
-            null,
-            { interactive: false },
-          );
+            // LRCLIB only — no Shazam for autoplay.
+            const lrc = await fetchLRCLibLyrics(candidate.title, candidate.artist);
+            if (!lrc?.lyrics?.length) return null;
+            if (!artistsMatch(candidate.artist, lrc.artist)) return null;
 
-          if (!result?.lyrics?.length) continue;
+            return { candidate, youtube, lrc };
+          }),
+        );
 
-          const playableSong = {
-            ...result,
-            title: result.title || candidate.title,
-            artist: result.artist || candidate.artist || "Unknown",
-            genre: favoriteGenre,
-            year: "",
-            spotify: null,
-            youtubeVideoId: youtube.videoId,
-            youtubeTitle: youtube.title || "",
-            isPlaceholder: false,
-          };
+        const winner = settled.find((r) => r.status === "fulfilled" && r.value)?.value;
+        if (!winner) continue;
 
-          const loaded = await playerRef.current.loadSong(playableSong);
-          if (loaded !== false) {
-            showToast(`${favoriteGenre}: ${playableSong.title} — ${playableSong.artist}`);
-            return true;
-          }
-        } catch (err) {
-          debug.warn("[autoplay] candidate failed:", candidate.title, err);
+        const { candidate, youtube, lrc } = winner;
+        const playableSong = {
+          ...lrc,
+          title: lrc.title || candidate.title,
+          artist: lrc.artist || candidate.artist || "Unknown",
+          genre: favoriteGenre,
+          year: "",
+          spotify: null,
+          youtubeVideoId: youtube.videoId,
+          youtubeTitle: youtube.title || "",
+          isPlaceholder: false,
+        };
+
+        const loaded = await playerRef.current.loadSong(playableSong);
+        if (loaded !== false) {
+          showToast(`${favoriteGenre}: ${playableSong.title} — ${playableSong.artist}`);
+          return true;
         }
       }
 
@@ -925,6 +931,23 @@ export default function App() {
       setSkipLoading(true);
 
       try {
+        // Queue takes priority over genre autoplay.
+        const nextFromQueue = shiftQueue();
+        if (nextFromQueue) {
+          navigatingRef.current = true;
+          const loaded = await playerRef.current.loadSong(nextFromQueue);
+          navigatingRef.current = false;
+          if (loaded !== false) {
+            h.stack = h.stack.slice(0, h.index + 1);
+            h.stack.push(nextFromQueue);
+            h.index = h.stack.length - 1;
+            setHistoryTick((t) => t + 1);
+          }
+          skipBusyRef.current = false;
+          setSkipLoading(false);
+          return;
+        }
+
         if (hasForward) {
           const target = h.stack[h.index + 1];
           navigatingRef.current = true;
@@ -977,11 +1000,65 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const { queue, add: addToQueue, removeAt: removeFromQueue,
+    clear: clearQueue, shift: shiftQueue, size: queueSize } = useQueue();
+  const [cardOpen, setCardOpen] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const sharedDoneRef = useRef(false);
+
   const player = usePlayer({
     onSongLoad: handleSongLoad,
     onEnded: () => goNext({ auto: true }),
   });
   playerRef.current = player;
+
+  // Screen stay-awake while music plays
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useWakeLock(player.isPlaying);
+
+  // Lock-screen / notification / headset controls
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useMediaSession({
+    song: player.song,
+    isPlaying: player.isPlaying,
+    currentSec: player.currentSec,
+    duration: player.duration,
+    handlers: {
+      play: () => player.play(),
+      pause: () => player.pause(),
+      previoustrack: () => goPrev(),
+      nexttrack: () => goNext(),
+      seekBy: (delta) => player.seekTo(player.currentSec + delta),
+      seekTo: (sec) => player.seekTo(sec),
+    },
+  });
+
+  // Desktop keyboard shortcuts
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useKeyboardShortcuts({
+    togglePlay: () => player.togglePlay(),
+    seekBy: (d) => player.seekTo(player.currentSec + d),
+    volumeBy: (d) => player.setVolume(Math.min(100, Math.max(0, player.volume + d))),
+    next: () => goNext(),
+    prev: () => goPrev(),
+    mute: () => player.setVolume(player.volume > 0 ? 0 : 80),
+    favourite: () => player.song && toggleFav(player.song),
+    queue: () => setQueueOpen((o) => !o),
+    help: () => showToast("Space play/pause  ·  N next  ·  P prev  ·  ← → seek  ·  ↑ ↓ volume  ·  F ♥  ·  Q queue"),
+  });
+
+  // Shared-link auto-search (runs once on mount)
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    if (sharedDoneRef.current) return;
+    sharedDoneRef.current = true;
+    const params = readShareParams();
+    if (params?.title) {
+      const q = params.title + (params.artist ? " - " + params.artist : "");
+      setTimeout(() => handleSearch(q), 600);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   return (
     <>
@@ -1072,6 +1149,45 @@ export default function App() {
           onNext={() => goNext()}
           canPrev={historyRef.current.index > 0}
           busy={skipLoading}
+          onShare={async () => {
+            if (!player.song) return;
+            const r = await shareSong(player.song);
+            if (r === "copied") showToast("Link copied to clipboard");
+            else if (r === "failed") showToast("Couldn't share — copy the URL manually");
+          }}
+          onCard={() => setCardOpen(true)}
+          onQueue={() => setQueueOpen(true)}
+          queueCount={queueSize()}
+        />
+
+        <LyricCardModal
+          open={cardOpen}
+          onClose={() => setCardOpen(false)}
+          song={player.song}
+          activeIdx={player.activeLyricIdx ?? -1}
+          showToast={showToast}
+        />
+
+        <QueuePanel
+          open={queueOpen}
+          onClose={() => setQueueOpen(false)}
+          queue={queue}
+          favorites={favorites}
+          recent={recentlyPlayed}
+          onAdd={(song) => {
+            const r = addToQueue(song);
+            if (r === "added") showToast(`Added to queue: ${song.title}`);
+            else if (r === "duplicate") showToast("Already in the queue");
+            else if (r === "full") showToast("Queue is full (30 songs max)");
+          }}
+          onRemove={removeFromQueue}
+          onClear={clearQueue}
+          onPlayNow={async (i) => {
+            const song = queue[i];
+            removeFromQueue(i);
+            if (song) await playerRef.current.loadSong(song);
+            setQueueOpen(false);
+          }}
         />
 
         <MiniPlayerBar

@@ -3198,6 +3198,9 @@ input {
 /* ===========================================================
    Desktop (mouse): overlay on the video, visible only on hover
    =========================================================== */
+/* ===========================================================
+   Desktop (mouse): prev/next over the video, only on hover
+   =========================================================== */
 .skip-overlay {
   position: absolute;
   inset: 0;
@@ -3212,21 +3215,13 @@ input {
 .skip-overlay .skip-btn {
   width: 44px;
   height: 44px;
-  padding: 0;
-  border-radius: 50%;
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
   font-size: 20px;
   opacity: 0;
   pointer-events: none; /* hidden buttons can't be clicked either */
-  transition: opacity 0.18s ease;
 }
 
-.skip-overlay .skip-btn-label {
-  display: none;
-}
-
-/* Reveal while the pointer is over the video (or a button has keyboard focus). */
 .skip-host:hover > .skip-overlay .skip-btn,
 .skip-host:focus-within > .skip-overlay .skip-btn {
   opacity: 1;
@@ -3234,50 +3229,84 @@ input {
 }
 
 /* ===========================================================
-   Touch: slim row under the video (never over it)
+   Row under the video (actions; plus prev/next on touch)
    =========================================================== */
 .skip-row {
   display: flex;
   justify-content: center;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
   padding: 8px 0 2px;
 }
 
 .skip-row .skip-btn {
-  height: 38px;
-  padding: 0 16px;
-  gap: 6px;
-  border-radius: 999px;
+  width: 40px;
+  height: 40px;
   border: 1px solid rgba(128, 160, 200, 0.3);
   background: rgba(128, 160, 200, 0.12);
   color: inherit;
-  font-size: 14px;
+  font-size: 18px;
+}
+
+.skip-row .skip-btn:hover:not(:disabled) {
+  border-color: var(--accent, #38bdf8);
+}
+
+.skip-sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: rgba(128, 160, 200, 0.3);
+}
+
+.skip-btn--badge {
+  position: relative;
+}
+
+.skip-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #0ea5e9;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
 }
 
 /* ===========================================================
-   Shared
+   Shared button base
    =========================================================== */
 .skip-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
   border: none;
+  border-radius: 50%;
   font: inherit;
   cursor: pointer;
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   transition:
     background 0.15s,
+    border-color 0.15s,
     transform 0.1s,
     opacity 0.18s;
 }
 
 .skip-btn:active:not(:disabled) {
-  transform: scale(0.94);
+  transform: scale(0.93);
 }
 
 .skip-btn:disabled {
   cursor: progress;
+  opacity: 0.6;
 }
 
 .skip-btn .spin {

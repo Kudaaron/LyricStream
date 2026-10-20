@@ -1,0 +1,264 @@
+/* Shared styles for the Queue panel and the Lyric card modal. These are
+   dark "sheet" dialogs that look the same in light and dark themes. */
+.fx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(2, 6, 23, 0.65);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.fx-sheet {
+  width: 100%;
+  max-width: 760px;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 16px 18px 22px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 18px 18px 0 0;
+  background: #0f172a;
+  color: #e2e8f0;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.45);
+}
+
+@media (min-width: 720px) {
+  .fx-backdrop {
+    align-items: center;
+  }
+  .fx-sheet {
+    border-radius: 18px;
+  }
+}
+
+.fx-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.fx-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.fx-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fx-close,
+.fx-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.1);
+  color: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.fx-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.fx-icon-btn:hover:not(:disabled),
+.fx-close:hover {
+  border-color: #38bdf8;
+}
+
+.fx-link {
+  border: none;
+  background: none;
+  color: #38bdf8;
+  font: inherit;
+  cursor: pointer;
+}
+
+.fx-empty {
+  margin: 10px 0 14px;
+  opacity: 0.7;
+  font-size: 14px;
+  list-style: none;
+}
+
+.fx-list {
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+.fx-list--source {
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 0;
+}
+
+.fx-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.fx-row-index {
+  width: 20px;
+  text-align: center;
+  opacity: 0.55;
+  font-size: 13px;
+}
+.fx-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.fx-row-text strong,
+.fx-row-text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fx-row-text small {
+  opacity: 0.65;
+}
+
+.fx-add {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0 14px;
+}
+
+.fx-add input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.08);
+  color: inherit;
+  font: inherit;
+}
+
+.fx-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 16px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #2196f3, #6a6af4);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fx-primary--small {
+  padding: 10px 16px;
+}
+
+.fx-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.fx-tab {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  opacity: 0.65;
+  cursor: pointer;
+}
+
+.fx-tab--active {
+  opacity: 1;
+  background: rgba(56, 189, 248, 0.16);
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+/* ---- lyric card ---- */
+.fx-card-layout {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 720px) {
+  .fx-card-layout {
+    grid-template-columns: 260px 1fr;
+  }
+}
+
+.fx-card-preview canvas {
+  display: block;
+  width: 100%;
+  max-width: 260px;
+  height: auto;
+  margin: 0 auto;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.fx-styles {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.fx-swatch {
+  width: 34px;
+  height: 34px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.fx-swatch--active {
+  border-color: #fff;
+}
+
+.fx-hint {
+  margin: 4px 0 8px;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.fx-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  margin-bottom: 12px;
+  overflow-y: auto;
+}
+
+.fx-line {
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.08);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fx-line--on {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.18);
+}

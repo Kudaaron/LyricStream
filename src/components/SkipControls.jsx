@@ -1,8 +1,14 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-
-
+// Player controls drawn around the YouTube video (found via its iframe, so
+// PlayerCard.jsx needs no edits):
+//
+//  • Mouse devices: previous / next buttons over the video, visible only
+//    while hovering it (pure CSS :hover).
+//  • Touch devices: previous / next go in the row UNDER the video instead,
+//    so nothing ever sits over the video or its play button.
+//  • Both: an action row under the video — share link, lyric card, queue.
 function findVideoHost() {
     const iframe = document.querySelector('iframe[src*="youtube"]');
     return iframe?.parentElement || null;
@@ -10,9 +16,7 @@ function findVideoHost() {
 
 function useHoverCapable() {
     const query = "(hover: hover) and (pointer: fine)";
-    const [capable, setCapable] = useState(
-        () => window.matchMedia?.(query).matches ?? true,
-    );
+    const [capable, setCapable] = useState(() => window.matchMedia?.(query).matches ?? true);
 
     useEffect(() => {
         const mq = window.matchMedia?.(query);
@@ -25,7 +29,17 @@ function useHoverCapable() {
     return capable;
 }
 
-export default function SkipControls({ visible, onPrev, onNext, canPrev, busy }) {
+export default function SkipControls({
+    visible,
+    onPrev,
+    onNext,
+    canPrev,
+    busy,
+    onShare,
+    onCard,
+    onQueue,
+    queueCount = 0,
+}) {
     const hoverCapable = useHoverCapable();
     const [host, setHost] = useState(null);
     const [rowMount, setRowMount] = useState(null);
@@ -61,9 +75,9 @@ export default function SkipControls({ visible, onPrev, onNext, canPrev, busy })
         };
     }, [host, hoverCapable]);
 
-    // Touch: create a mount point right after the video for the button row.
+    // Row mount point right after the video (both modes).
     useEffect(() => {
-        if (!host || hoverCapable) {
+        if (!host) {
             setRowMount(null);
             return undefined;
         }
@@ -77,7 +91,7 @@ export default function SkipControls({ visible, onPrev, onNext, canPrev, busy })
             mount.remove();
             setRowMount(null);
         };
-    }, [host, hoverCapable]);
+    }, [host]);
 
     if (!visible || !host) return null;
 
@@ -87,11 +101,10 @@ export default function SkipControls({ visible, onPrev, onNext, canPrev, busy })
             className="skip-btn"
             onClick={onPrev}
             disabled={busy}
-            title={canPrev ? "Previous song" : "Restart song"}
+            title={canPrev ? "Previous song (P)" : "Restart song (P)"}
             aria-label="Previous song"
         >
             <i className="ti ti-player-skip-back-filled" aria-hidden="true" />
-            <span className="skip-btn-label">Previous</span>
         </button>
     );
 
@@ -101,34 +114,53 @@ export default function SkipControls({ visible, onPrev, onNext, canPrev, busy })
             className="skip-btn"
             onClick={onNext}
             disabled={busy}
-            title="Next song"
+            title="Next song (N)"
             aria-label="Next song"
         >
             <i
                 className={`ti ${busy ? "ti-loader-2 spin" : "ti-player-skip-forward-filled"}`}
                 aria-hidden="true"
             />
-            <span className="skip-btn-label">Next</span>
         </button>
     );
 
-    if (hoverCapable) {
-        return createPortal(
-            <div className="skip-overlay">
-                {prevBtn}
-                {nextBtn}
-            </div>,
-            host,
-        );
-    }
+    return (
+        <>
+            {hoverCapable &&
+                createPortal(
+                    <div className="skip-overlay">
+                        {prevBtn}
+                        {nextBtn}
+                    </div>,
+                    host,
+                )}
 
-    if (!rowMount) return null;
+            {rowMount &&
+                createPortal(
+                    <div className="skip-row">
+                        {!hoverCapable && (
+                            <>
+                                {prevBtn}
+                                {nextBtn}
+                                <span className="skip-sep" aria-hidden="true" />
+                            </>
+                        )}
 
-    return createPortal(
-        <div className="skip-row">
-            {prevBtn}
-            {nextBtn}
-        </div>,
-        rowMount,
+                        <button type="button" className="skip-btn" onClick={onShare} title="Share link" aria-label="Share this song">
+                            <i className="ti ti-share-3" aria-hidden="true" />
+                        </button>
+
+                        <button type="button" className="skip-btn" onClick={onCard} title="Make a lyric card" aria-label="Create a lyric card">
+                            <i className="ti ti-photo" aria-hidden="true" />
+                        </button>
+
+                        <button type="button" className="skip-btn skip-btn--badge" onClick={onQueue} title="Up next (Q)" aria-label="Open the queue">
+                            <i className="ti ti-playlist" aria-hidden="true" />
+                            {queueCount > 0 && <span className="skip-badge">{queueCount}</span>}
+                        </button>
+                    </div>,
+                    rowMount,
+                )}
+        </>
     );
 }

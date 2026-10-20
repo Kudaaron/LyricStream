@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAudioRecognition } from '../hooks/useAudioRecognition';
+import { autocompleteLRCLib } from '../api/lrclib';
 
 const QUICK_TAGS = [
   'Blinding Lights', 'Shape of You', 'Bohemian Rhapsody',
@@ -31,7 +32,8 @@ export default function SearchBar({
   const [activeIdx, setActiveIdx] = useState(-1); // keyboard nav
   const wrapRef = useRef(null);
   const inputRef = useRef(null);
-  const abortRef = useRef(null); // cancel in-flight requests
+  const latestReqId = useRef(0); // replaces AbortController — avoids the
+  // CORS-blocked abort that caused 503 errors
 
   const {
     status: idStatus, error: idError, secondsLeft: idSecondsLeft,
@@ -39,42 +41,48 @@ export default function SearchBar({
   } = useAudioRecognition();
 
   // Fetch suggestions from LRCLIB as user types — skipped entirely in
-  // YouTube-URL mode, since suggesting song titles makes no sense there.
+  // YouTube-URL mode. Goes through the health-breaker so a rate-limited
+  // LRCLIB is never hit again.
   const fetchSuggestions = useCallback(async (val) => {
     if (searchMode === 'youtube' || !val || val.length < 2) {
       setSuggestions([]); setOpen(false); setLoadingSuggestions(false);
       return;
     }
 
-    // Cancel any previous in-flight request
-    if (abortRef.current) abortRef.current.abort();
-    abortRef.current = new AbortController();
+    // Increment request ID; any earlier in-flight call that resolves
+    // later will see its ID is stale and discard its result.
+    const reqId = ++latestReqId.current;
 
     setLoadingSuggestions(true);
 
     try {
-      const endpoint = `https://lrclib.net/api/search?q=${encodeURIComponent(val)}`;
+      // Uses the health-checked wrapper — never calls LRCLIB when it
+      // is rate-limited or throwing 503s.
+      const data = await autocompleteLRCLib(val);
 
-      const res = await fetch(endpoint, { signal: abortRef.current.signal });
-      if (!res.ok) throw new Error('fetch failed');
-      const data = await res.json();
-      if (!Array.isArray(data)) throw new Error('bad response');
+      // Discard if a newer request already arrived
+      if (reqId !== latestReqId.current) return;
+
+      if (!Array.isArray(data) || !data.length) {
+        setSuggestions([]); setOpen(false);
+        return;
+      }
 
       // Deduplicate by title+artist
       const seen = new Set();
       const remote = [];
       for (const r of data) {
-        if (!r.trackName || !r.artistName) continue;
-        const key = `${r.trackName.toLowerCase()}::${r.artistName.toLowerCase()}`;
+        if (!r.title || !r.artist) continue;
+        const key = `${r.title.toLowerCase()}::${r.artist.toLowerCase()}`;
         if (seen.has(key)) continue;
         seen.add(key);
         remote.push({
-          label: `${r.trackName} — ${r.artistName}`,
-          query: `${r.trackName} - ${r.artistName}`,
-          title: r.trackName,
-          artist: r.artistName,
-          album: r.albumName || '',
-          hasSynced: !!r.syncedLyrics,
+          label: `${r.title} — ${r.artist}`,
+          query: `${r.title} - ${r.artist}`,
+          title: r.title,
+          artist: r.artist,
+          album: r.album || '',
+          hasSynced: !!r.hasSynced,
         });
         if (remote.length >= 8) break;
       }
@@ -82,16 +90,18 @@ export default function SearchBar({
       setSuggestions(remote);
       setOpen(remote.length > 0);
       setActiveIdx(-1);
-    } catch (err) {
-      if (err.name === 'AbortError') return; // cancelled — ignore
+    } catch {
+      if (reqId !== latestReqId.current) return;
       setSuggestions([]);
       setOpen(false);
     } finally {
-      setLoadingSuggestions(false);
+      if (reqId === latestReqId.current) setLoadingSuggestions(false);
     }
   }, [searchMode]);
 
-  const debouncedFetch = useDebounce(fetchSuggestions, 280);
+  // 350 ms debounce — fast enough to feel live, slow enough to avoid
+  // hitting LRCLIB on every keystroke.
+  const debouncedFetch = useDebounce(fetchSuggestions, 350);
 
   const handleInput = (val) => {
     setQuery(val);
@@ -105,13 +115,9 @@ export default function SearchBar({
     setSuggestions([]);
     setOpen(false);
     setActiveIdx(-1);
+    latestReqId.current++; // discard any pending suggestion fetch
     onFocusChange?.(false);
-
-    // Tell the parent to remove any old SongPicker before this
-    // search starts. This prevents multiple pickers from stacking.
     onBeforeSearch?.();
-
-    if (abortRef.current) abortRef.current.abort();
 
     if (searchMode === 'artist') onArtistSearch(v);
     else if (searchMode === 'youtube') onYoutubeUrlSearch(v);
@@ -170,9 +176,6 @@ export default function SearchBar({
     setSuggestions([]); setOpen(false); setActiveIdx(-1);
   }, [searchMode]);
 
-  // Identification and typed suggestions are mutually exclusive — close
-  // the suggestions list the moment listening/processing starts, so the
-  // two can never be visible (and overlapping) at the same time.
   const handleMicClick = () => {
     if (idStatus === 'listening') {
       idStopEarly();
@@ -180,15 +183,16 @@ export default function SearchBar({
     }
     if (idStatus === 'idle' || idStatus === 'error') {
       setOpen(false);
+      latestReqId.current++; // discard any pending suggestion fetch
       idListen((result) => onSongIdentified?.(result));
     }
   };
 
   const idPanelOpen = idStatus !== 'idle';
   const placeholders = {
-    song: 'Song title or "Song - Artist"…',
-    artist: 'Artist name — e.g. "Ed Sheeran"',
-    youtube: 'Paste a YouTube video URL…',
+    song: 'Song title or "Song - Artist"\u2026',
+    artist: 'Artist name \u2014 e.g. "Ed Sheeran"',
+    youtube: 'Paste a YouTube video URL\u2026',
   };
 
   return (
@@ -230,8 +234,6 @@ export default function SearchBar({
             onFocus={() => {
               suggestions.length && searchMode !== 'youtube' && setOpen(true);
               onFocusChange?.(true);
-              // Belt-and-suspenders for cases where the player view
-              // wasn't the reason the bar was out of view (e.g. desktop).
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
           />
@@ -241,7 +243,7 @@ export default function SearchBar({
             <button
               className="search-clear"
               onClick={() => {
-                if (abortRef.current) abortRef.current.abort();
+                latestReqId.current++;
                 setQuery('');
                 setSuggestions([]);
                 setOpen(false);
@@ -254,13 +256,8 @@ export default function SearchBar({
             </button>
           )}
 
-          {/* Loading dot while fetching suggestions */}
           {loadingSuggestions && <span className="search-loading-dot" />}
 
-          {/* Song identification — now lives inline in the bar itself,
-              so it can never visually collide with the suggestions
-              dropdown below. Hidden entirely in YouTube-URL mode, since
-              "identify what's playing" doesn't apply there. */}
           {searchMode !== 'youtube' && (
             <button
               className={`search-mic-btn ${idStatus === 'listening' ? 'listening' : ''} ${idStatus === 'verifying' || idStatus === 'processing' ? 'processing' : ''}`}
@@ -284,18 +281,15 @@ export default function SearchBar({
           </button>
         </div>
 
-        {/* Identification status panel — replaces the suggestions
-            dropdown while listening/processing/error, never shown
-            alongside it. */}
         {idPanelOpen && (
           <div className="suggestions-dropdown id-status-panel">
             <div className="id-status-icon">
               <i className={`ti ${idStatus === 'error' ? 'ti-alert-triangle' : idStatus === 'verifying' ? 'ti-shield-check' : 'ti-microphone'}`} />
             </div>
             <p className="id-status-text">
-              {idStatus === 'verifying' && "Verifying you're human…"}
-              {idStatus === 'listening' && `Listening… ${idSecondsLeft}s`}
-              {idStatus === 'processing' && 'Identifying song…'}
+              {idStatus === 'verifying' && "Verifying you\u2019re human\u2026"}
+              {idStatus === 'listening' && `Listening\u2026 ${idSecondsLeft}s`}
+              {idStatus === 'processing' && 'Identifying song\u2026'}
               {idStatus === 'error' && idError}
             </p>
             {idStatus === 'error' && (
@@ -306,7 +300,6 @@ export default function SearchBar({
           </div>
         )}
 
-        {/* Autocomplete dropdown */}
         {!idPanelOpen && open && suggestions.length > 0 && (
           <div className="suggestions-dropdown">
             <div className="suggestion-group-label">
@@ -334,7 +327,7 @@ export default function SearchBar({
             ))}
 
             <div className="suggestion-footer">
-              <i className="ti ti-keyboard" /> ↑↓ navigate · Enter select · Esc close
+              <i className="ti ti-keyboard" /> \u2191\u2193 navigate \u00b7 Enter select \u00b7 Esc close
             </div>
           </div>
         )}
@@ -343,16 +336,8 @@ export default function SearchBar({
       <div style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center', marginTop: 8 }}>
         {searchMode === 'artist' && 'Browse all songs by an artist and pick one'}
         {searchMode === 'song' && 'Suggestions from LRCLIB as you type'}
-        {searchMode === 'youtube' && "For songs our search can't find on YouTube — we'll fetch lyrics from LRCLIB separately"}
+        {searchMode === 'youtube' && "For songs our search can\u2019t find on YouTube \u2014 we\u2019ll fetch lyrics from LRCLIB separately"}
       </div>
-
-      {/* {searchMode === 'song' && (
-        <div className="quick-tags">
-          {QUICK_TAGS.map(tag => (
-            <span key={tag} className="tag" onClick={() => submit(tag)}>{tag}</span>
-          ))}
-        </div>
-      )} */}
     </div>
   );
 }
